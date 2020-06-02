@@ -1000,7 +1000,7 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 		if (interface_tsinfo_valid(iface) &&
 		    !interface_tsmodes_supported(iface, required_modes)) {
 			pr_err("interface '%s' does not support requested timestamping mode",
-			       interface_name(iface));
+			       interface_config_name(iface));
 			return NULL;
 		}
 	}
@@ -1045,19 +1045,19 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	/* Configure the UDS. */
 	uds_ifname = config_get_string(config, NULL, "uds_address");
 	c->udsif = interface_create(uds_ifname);
-	if (config_set_section_int(config, interface_name(c->udsif),
+	if (config_set_section_int(config, interface_config_name(c->udsif),
 				   "announceReceiptTimeout", 0)) {
 		return NULL;
 	}
-	if (config_set_section_int(config, interface_name(c->udsif),
+	if (config_set_section_int(config, interface_config_name(c->udsif),
 				    "delay_mechanism", DM_AUTO)) {
 		return NULL;
 	}
-	if (config_set_section_int(config, interface_name(c->udsif),
+	if (config_set_section_int(config, interface_config_name(c->udsif),
 				    "network_transport", TRANS_UDS)) {
 		return NULL;
 	}
-	if (config_set_section_int(config, interface_name(c->udsif),
+	if (config_set_section_int(config, interface_config_name(c->udsif),
 				   "delay_filter_length", 1)) {
 		return NULL;
 	}
@@ -1196,7 +1196,7 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	/* Create the ports. */
 	STAILQ_FOREACH(iface, &config->interfaces, list) {
 		if (clock_add_port(c, phc_device, phc_index, timestamping, iface)) {
-			pr_err("failed to open port %s", interface_name(iface));
+			pr_err("failed to open port %s", interface_config_name(iface));
 			return NULL;
 		}
 	}

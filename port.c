@@ -3011,10 +3011,12 @@ struct port *port_open(const char *phc_device,
 	}
 
 	p->phc_index = phc_index;
-	p->jbod = config_get_int(cfg, interface_name(interface), "boundary_clock_jbod");
-	transport = config_get_int(cfg, interface_name(interface), "network_transport");
-	p->master_only = config_get_int(cfg, interface_name(interface), "masterOnly");
-	p->bmca = config_get_int(cfg, interface_name(interface), "BMCA");
+	p->jbod = config_get_int(cfg, interface_config_name(interface), "boundary_clock_jbod");
+	transport = config_get_int(cfg, interface_config_name(interface), "network_transport");
+	p->master_only = config_get_int(cfg, interface_config_name(interface), "masterOnly");
+	p->bmca = config_get_int(cfg, interface_config_name(interface), "BMCA");
+
+	pr_info("Opening port for interface %s (transport %d)", interface_config_name(interface), transport);
 
 	if (p->bmca == BMCA_NOOP && transport != TRANS_UDS) {
 		if (p->master_only) {
@@ -3052,7 +3054,7 @@ struct port *port_open(const char *phc_device,
 		}
 	}
 
-	p->name = interface_name(interface);
+	p->name = interface_config_name(interface);
 	p->iface = interface;
 	p->asymmetry = config_get_int(cfg, p->name, "delayAsymmetry");
 	p->asymmetry <<= 16;

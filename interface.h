@@ -56,6 +56,15 @@ int interface_get_tsinfo(struct interface *iface);
 const char *interface_label(struct interface *iface);
 
 /**
+ * Obtains the name of a network interface for configuration, in the
+ * case of multiple instances of the same interface with different
+ * protocols.
+ * @param iface  The interface of interest.
+ * @return       The device name of the network interface.
+ */
+const char *interface_config_name(struct interface *iface);
+
+/**
  * Obtains the name of a network interface.
  * @param iface  The interface of interest.
  * @return       The device name of the network interface.

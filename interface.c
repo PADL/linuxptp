@@ -9,20 +9,29 @@
 
 struct interface {
 	STAILQ_ENTRY(interface) list;
-	char name[MAX_IFNAME_SIZE + 1];
+	char config_name[MAX_IFNAME_SIZE + 1];
 	char ts_label[MAX_IFNAME_SIZE + 1];
+	char name[MAX_IFNAME_SIZE + 1];
 	struct sk_ts_info ts_info;
 };
 
 struct interface *interface_create(const char *name)
 {
 	struct interface *iface;
+	char *p;
 
 	iface = calloc(1, sizeof(struct interface));
 	if (!iface) {
 		return NULL;
 	}
-	strncpy(iface->name, name, MAX_IFNAME_SIZE);
+
+	strncpy(iface->config_name, name, MAX_IFNAME_SIZE);
+
+	p = strchr(iface->config_name, ':');
+	if (p != NULL)
+		strncpy(iface->name, iface->config_name, (p - iface->config_name));
+	else
+		strncpy(iface->name, iface->config_name, MAX_IFNAME_SIZE);
 
 	return iface;
 }
@@ -47,6 +56,11 @@ int interface_get_tsinfo(struct interface *iface)
 const char *interface_label(struct interface *iface)
 {
 	return iface->ts_label;
+}
+
+const char *interface_config_name(struct interface *iface)
+{
+	return iface->config_name;
 }
 
 const char *interface_name(struct interface *iface)
