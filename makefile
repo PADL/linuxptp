@@ -17,7 +17,7 @@
 
 KBUILD_OUTPUT =
 
-DEBUG	=
+DEBUG	= -g
 CC	= $(CROSS_COMPILE)gcc
 VER     = -DVER=$(version)
 CFLAGS	= -Wall $(VER) $(incdefs) $(DEBUG) $(EXTRA_CFLAGS)
@@ -28,7 +28,7 @@ SERVOS	= linreg.o ntpshm.o nullf.o pi.o servo.o
 TRANSP	= raw.o transport.o udp.o udp6.o uds.o
 TS2PHC	= ts2phc.o lstab.o nmea.o serial.o sock.o ts2phc_generic_master.o \
  ts2phc_master.o ts2phc_phc_master.o ts2phc_nmea_master.o ts2phc_slave.o
-OBJ	= bmc.o clock.o clockadj.o clockcheck.o config.o designated_fsm.o \
+OBJ	= avb.o bmc.o clock.o clockadj.o clockcheck.o config.o designated_fsm.o \
  e2e_tc.o fault.o $(FILTERS) fsm.o hash.o interface.o monitor.o msg.o phc.o \
  port.o port_signaling.o pqueue.o print.o ptp4l.o p2p_tc.o rtnl.o $(SERVOS) \
  sk.o stats.o tc.o $(TRANSP) telecom.o tlv.o tsproc.o unicast_client.o \

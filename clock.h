@@ -367,4 +367,6 @@ void clock_check_ts(struct clock *c, uint64_t ts);
  */
 double clock_rate_ratio(struct clock *c);
 
+void clock_update_avb_control(struct clock *c);
+
 #endif

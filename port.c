@@ -44,6 +44,7 @@
 #include "unicast_client.h"
 #include "unicast_service.h"
 #include "util.h"
+#include "avb.h"
 
 #define ALLOWED_LOST_RESPONSES 3
 #define ANNOUNCE_SPAN 1
@@ -1213,6 +1214,15 @@ static void port_synchronize(struct port *p,
 		message_interval_request(p, last_state, sync_interval);
 		break;
 	}
+
+	clock_update_avb_control(p->clock);
+	avb_control_interface_update_port(p->logSyncInterval,
+					  p->logAnnounceInterval,
+					  p->logPdelayReqInterval,
+					  port_number(p),
+					  p->seqnum.delayreq,
+					  p->state,
+					  p->asCapable);
 }
 
 /*
@@ -1471,6 +1481,7 @@ int port_tx_announce(struct port *p, struct address *dst)
 		pr_err("port %hu: send announce failed", portnum(p));
 	}
 	msg_put(msg);
+
 	return err;
 }
 
@@ -1577,6 +1588,7 @@ int port_tx_sync(struct port *p, struct address *dst)
 	if (err) {
 		pr_err("port %hu: send follow up failed", portnum(p));
 	}
+
 out:
 	msg_put(msg);
 	msg_put(fup);
@@ -2240,8 +2252,8 @@ int process_pdelay_resp(struct port *p, struct ptp_message *m)
 		}
 	}
 	if (!p->peer_delay_req) {
-		pr_err("port %hu: rogue peer delay response", portnum(p));
-		return -1;
+		pr_err("port %hu: rogue peer delay response; ignoring", portnum(p));
+		return 0;
 	}
 	if (p->peer_portid_valid) {
 		if (!pid_eq(&p->peer_portid, &m->header.sourcePortIdentity)) {
@@ -3016,7 +3028,8 @@ struct port *port_open(const char *phc_device,
 	p->master_only = config_get_int(cfg, interface_config_name(interface), "masterOnly");
 	p->bmca = config_get_int(cfg, interface_config_name(interface), "BMCA");
 
-	pr_info("Opening port for interface %s (transport %d)", interface_config_name(interface), transport);
+	pr_info("Opening port %d for interface %s (transport %d)",
+		number, interface_config_name(interface), transport);
 
 	if (p->bmca == BMCA_NOOP && transport != TRANS_UDS) {
 		if (p->master_only) {

@@ -35,6 +35,7 @@
 #include "uds.h"
 #include "util.h"
 #include "version.h"
+#include "avb.h"
 
 static void usage(char *progname)
 {
@@ -240,6 +241,8 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
+	avb_control_interface_init();
+
 	clock = clock_create(type, cfg, req_phc);
 	if (!clock) {
 		fprintf(stderr, "failed to create a clock\n");
@@ -252,9 +255,11 @@ int main(int argc, char *argv[])
 		if (clock_poll(clock))
 			break;
 	}
+
 out:
 	if (clock)
 		clock_destroy(clock);
+	avb_control_interface_close();
 	config_destroy(cfg);
 	return err;
 }

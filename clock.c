@@ -44,6 +44,7 @@
 #include "tsproc.h"
 #include "uds.h"
 #include "util.h"
+#include "avb.h"
 
 #define N_CLOCK_PFD (N_POLLFD + 1) /* one extra per port, for the fault timer */
 #define POW2_41 ((double)(1ULL << 41))
@@ -653,6 +654,11 @@ static enum servo_state clock_no_adjust(struct clock *c, tmv_t ingress,
 	f->count = 0;
 
 	c->master_local_rr = ratio;
+
+	avb_control_interface_update(tmv_to_nanoseconds(c->master_offset),
+				     ratio,
+				     tmv_to_nanoseconds(ingress),
+				     c->stats.max_count);
 
 	return state;
 }
@@ -1771,6 +1777,11 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 			tmv_to_nanoseconds(c->path_delay));
 	}
 
+	avb_control_interface_update(tmv_to_nanoseconds(c->master_offset),
+				     (1.0 - adj / 1e9),
+				     tmv_to_nanoseconds(c->ingress_ts),
+				     c->stats.max_count);
+
 	return state;
 }
 
@@ -1896,6 +1907,9 @@ static void handle_state_decision_event(struct clock *c)
 		}
 		port_dispatch(piter, event, fresh_best);
 	}
+
+	avb_control_interface_update_gm(c->dad.pds.grandmasterIdentity.id,
+					clock_domain_number(c));
 }
 
 struct clock_description *clock_description(struct clock *c)
@@ -1931,4 +1945,15 @@ struct servo *clock_servo(struct clock *c)
 enum servo_state clock_servo_state(struct clock *c)
 {
 	return c->servo_state;
+}
+
+void clock_update_avb_control(struct clock *c)
+{
+	avb_control_interface_update_clock(clock_identity(c).id,
+					   c->dds.priority1,
+					   clock_class(c),
+					   c->dds.clockQuality.offsetScaledLogVariance,
+					   c->dds.clockQuality.clockAccuracy,
+					   c->dds.priority2,
+					   c->dds.domainNumber);
 }
