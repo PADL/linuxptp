@@ -99,6 +99,7 @@ enum transport_type transport_type(struct transport *t)
 }
 
 struct transport *transport_create(struct config *cfg,
+				   void *context,
 				   enum transport_type type)
 {
 	struct transport *t = NULL;
@@ -123,6 +124,7 @@ struct transport *transport_create(struct config *cfg,
 	if (t) {
 		t->type = type;
 		t->cfg = cfg;
+		t->context = context;
 	}
 	return t;
 }
