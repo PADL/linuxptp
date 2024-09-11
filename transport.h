@@ -141,10 +141,12 @@ int transport_protocol_addr(struct transport *t, uint8_t *addr);
 /**
  * Allocate an instance of the specified transport.
  * @param config Pointer to the configuration database.
+ * @param context Application-specific context.
  * @param type  Which transport to obtain.
  * @return      Pointer to a transport instance on success, NULL otherwise.
  */
 struct transport *transport_create(struct config *cfg,
+				   void *context,
 				   enum transport_type type);
 
 /**

@@ -539,7 +539,7 @@ struct pmc *pmc_create(struct config *cfg, enum transport_type transport_type,
 		goto failed;
 	}
 
-	pmc->transport = transport_create(cfg, transport_type);
+	pmc->transport = transport_create(cfg, NULL, transport_type);
 	if (!pmc->transport) {
 		pr_err("failed to create transport");
 		goto failed;
