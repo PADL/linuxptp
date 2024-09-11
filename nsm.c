@@ -307,7 +307,7 @@ static int nsm_open(struct nsm *nsm, struct config *cfg)
 		pr_err("failed to create time stamp processor");
 		goto no_tsproc;
 	}
-	nsm->trp = transport_create(cfg, transport);
+	nsm->trp = transport_create(cfg, NULL, transport);
 	if (!nsm->trp) {
 		pr_err("failed to create transport");
 		goto no_trans;
