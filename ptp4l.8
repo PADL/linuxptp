@@ -367,7 +367,9 @@ greater than this value the port is marked as not 802.1AS capable.
 
 .TP
 .B network_transport
-Select the network transport. Possible values are UDPv4, UDPv6 and L2.
+Select the network transport. Possible values are UDPv4, UDPv6, L2,
+PTPv1_UDPv4 and PTPv1_UDPv6. The latter two network transports implement
+the IEEE 1588-2002 translation layer specified in Clause 18 of IEEE 1588-2008.
 The default is UDPv4.
 
 .TP
@@ -489,6 +491,57 @@ Relevant only with L2 transport. The default is 01:1B:19:00:00:00.
 .B p2p_dst_mac
 The MAC address to which peer delay messages should be sent.
 Relevant only with L2 transport. The default is 01:80:C2:00:00:0E.
+
+.TP
+.B ptpv1_dst_ipv4
+The IPv4 address to which PTPv1 messages should be sent.
+Relevant only with PTPv1_UDPv4 transport. The default is an address
+between 224.0.1.129 and 224.0.1.132, selected by the PTPv1
+subdomain name.
+
+.TP
+.B ptpv1_dst_ipv6
+The IPv6 address to which PTPv1 messages should be sent.
+The second byte of the address is substituted with ptpv1_udp6_scope.
+Relevant only with PTPv1_UDPv6 transport. The default is an address
+between FF0E:0:0:0:0:0:0:181 and FF0E:0:0:0:0:0:0:184, selected by
+the PTPv1 subdomain name.
+
+.TP
+.B ptpv1_udp6_scope
+Specifies the desired scope for the IPv6 multicast messages when
+using the PTPv1 transport protocol.  This will be used as the second byte
+of the primary address.  This option is only relevant with IPv6 transport.
+See RFC 4291.  The default is 0x0E for the global scope.
+
+.TP
+.B ptpv1_domain_map
+A whitespace separated, colon delimited list of PTPv2 domain to PTPv1
+subdomain mappings. The default is "0:_DFLT 1:_ALT1 2:_ALT2 3:_ALT3".
+
+.TP
+.B ptpv1_clockClass_map
+A whitespace separated, colon delimited list of PTPv2 clockClass to
+PTPv1 stratum mappings. A range of clockClass values may be specified,
+separated by a hyphen. The default is "6:0 7:0 9:1 10:2 13-248:3 251:4
+255:255".
+
+.TP
+.B ptpv1_priority1_map
+A whitespace separated, colon delimited list of PTPv2 priority1 to
+PTPv1 grandmasterIsPreferred and grandmasterClockStratum mappings. A
+range of priority1 values may be specified, separated by a hyphen. The
+grandmasterIsPreferred and grandmasterClockStratum mappings are
+separated by a comma. An asterisk may be used to indicate that the
+stratum mapping is derived from the clockClass. the default is
+"0-126:1,0 127:1,* 128:0,* 129-255:0,255".
+
+.TP
+.B ptpv1_priority2_map
+A whitespace separated, colon delimited list of PTPv2 priority2 to
+PTPv1 grandmasterIsBoundaryClock mappings. A range of priority2
+values may be specified, separated by a hyphen. The default is
+"0-127:1 128-255:0".
 
 .TP
 .B serverOnly
