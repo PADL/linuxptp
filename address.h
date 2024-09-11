@@ -38,4 +38,22 @@ struct address {
 	};
 };
 
+static inline size_t address_length(sa_family_t family)
+{
+	switch (family) {
+	case AF_PACKET:
+		return sizeof(struct sockaddr_ll);
+	case AF_INET:
+		return sizeof(struct sockaddr_in);
+	case AF_INET6:
+		return sizeof(struct sockaddr_in6);
+	case AF_LOCAL:
+		return sizeof(struct sockaddr_un);
+	case AF_UNSPEC:
+		return sizeof(struct sockaddr);
+	default:
+		return sizeof(struct sockaddr_storage);
+	}
+}
+
 #endif
