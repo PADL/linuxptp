@@ -3594,8 +3594,8 @@ struct port *port_open(const char *phc_device,
 	p->jbod = config_get_int(cfg, interface_name(interface), "boundary_clock_jbod");
 	p->master_only = config_get_int(cfg, interface_name(interface), "serverOnly");
 	p->bmca = config_get_int(cfg, interface_name(interface), "BMCA");
-	p->trp = transport_create(cfg, config_get_int(cfg,
-			      interface_name(interface), "network_transport"));
+	p->trp = transport_create(cfg, p, config_get_int(cfg,
+				  interface_name(interface), "network_transport"));
 	if (!p->trp) {
 		goto err_log_name;
 	}
