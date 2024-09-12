@@ -48,6 +48,8 @@ struct transport {
 	int (*physical_addr)(struct transport *t, uint8_t *addr);
 
 	int (*protocol_addr)(struct transport *t, uint8_t *addr);
+
+	int (*network_protocol)(struct transport *t, uint16_t *proto);
 };
 
 #endif
