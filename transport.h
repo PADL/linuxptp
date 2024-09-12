@@ -118,6 +118,11 @@ int transport_txts(struct fdarray *fda,
  */
 enum transport_type transport_type(struct transport *t);
 
+/**
+ * Returns the PTP networkProtocol for the transport.
+ */
+uint16_t transport_network_protocol(struct transport *t);
+
 #define TRANSPORT_ADDR_LEN 16
 
 /**
