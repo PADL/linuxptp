@@ -516,7 +516,7 @@ static int net_sync_resp_append(struct port *p, struct ptp_message *m)
 
 	if (best && !cid_eq(&cid, &pid)) {
 		/* Extract the parent's protocol address. */
-		paddr->networkProtocol = transport_type(best->trp);
+		paddr->networkProtocol = transport_network_protocol(best->trp);
 		paddr->addressLength =
 			transport_protocol_addr(best->trp, paddr->address);
 		if (best->best) {
@@ -525,7 +525,7 @@ static int net_sync_resp_append(struct port *p, struct ptp_message *m)
 		}
 	} else {
 		/* We are our own parent. */
-		paddr->networkProtocol = transport_type(p->trp);
+		paddr->networkProtocol = transport_network_protocol(p->trp);
 		paddr->addressLength =
 			transport_protocol_addr(p->trp, paddr->address);
 	}
@@ -970,7 +970,7 @@ static int port_management_fill_response(struct port *target,
 		buf += sizeof(struct PhysicalAddress) + u16;
 
 		cd->protocolAddress = (struct PortAddress *) buf;
-		u16 = transport_type(target->trp);
+		u16 = transport_network_protocol(target->trp);
 		memcpy(&cd->protocolAddress->networkProtocol, &u16, 2);
 		u16 = transport_protocol_addr(target->trp,
                                               cd->protocolAddress->address);

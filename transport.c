@@ -133,3 +133,14 @@ void transport_destroy(struct transport *t)
 {
 	t->release(t);
 }
+
+uint16_t transport_network_protocol(struct transport *t)
+{
+	uint16_t proto;
+
+	if (t->network_protocol &&
+	    t->network_protocol(t, &proto) == 0)
+		return proto;
+
+	return transport_type(t);
+}
