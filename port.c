@@ -3184,7 +3184,11 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	msg->hwts.type = p->timestamping;
 
 	cnt = transport_recv(p->trp, fd, msg);
-	if (cnt < 0) {
+	if (cnt == -EPROTO) {
+		pr_debug("%s: ignoring message", p->log_name);
+		msg_put(msg);
+		return EV_NONE;
+	} else if (cnt < 0) {
 		pr_err("%s: recv message failed", p->log_name);
 		msg_put(msg);
 		return EV_FAULT_DETECTED;
