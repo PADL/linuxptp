@@ -26,6 +26,7 @@
 
 #define MC_ADDR_COUNT	4
 
+__attribute__((weak)) struct clock *port_clock(struct port *p);
 __attribute__((weak)) void port_set_version(struct port *p, UInteger8 versionNumber);
 __attribute__((weak)) enum fsm_event port_event(struct port *port, int fd_index);
 
@@ -60,7 +61,7 @@ static struct in6_addr ipv6_mcast_addr[MC_ADDR_COUNT] = {
 /* Returns TRUE if ptp4l instantiated the transport. */
 static inline bool v1_is_ptp_transport_p(const struct v1_transport *v1)
 {
-	return v1->t.context != NULL &&
+	return v1->t.context != NULL && port_clock != NULL &&
 		port_set_version != NULL && port_event != NULL;
 }
 
@@ -422,6 +423,7 @@ static int v1_transport_open(struct transport *t, struct interface *iface,
 	v1->context.domain_number = config_get_int(t->cfg, NULL, "domainNumber");
 	v1->context.ts = config_get_int(t->cfg, interface_name(iface), "transportSpecific");
 	v1->context.ts <<= 4;
+	v1->context.clock = port_clock(port);
 
 	str = config_get_string(t->cfg, name, "ptpv1_domain_map");
 	if (str) {

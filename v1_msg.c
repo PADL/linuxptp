@@ -14,7 +14,10 @@
 #include "contain.h"
 #include "msg.h"
 #include "print.h"
+#include "clock.h"
 #include "v1_msg.h"
+
+__attribute__((weak)) struct PortIdentity clock_parent_identity(struct clock *c);
 
 /*
  * Translate PTPv1 (IEEE 1588-2002) to PTPv2 (IEEE 1588-2019) messages per
@@ -22,6 +25,18 @@
  * does carry a serialization overhead (at least, on little-endian platforms),
  * but it is also minimally intrusive to the PTPv2 state machine.
  */
+
+/* forward declarations for management translation helpers */
+
+static int v1_management_to_v2(const struct ptp_context_v1 *v1_context,
+			       const struct management_msg_v1 *v1_mgmt,
+			       struct management_msg *v2_mgmt);
+
+static int append_v2_mgmt_error(struct ptp_message *msg, uint16_t error_id);
+
+static int v2_management_to_v1(const struct ptp_context_v1 *v1_context,
+			       const struct management_msg *v2_mgmt,
+			       struct management_msg_v1 *v1_mgmt);
 
 /* Annex C */
 
@@ -569,7 +584,23 @@ static int v1_header_to_v2(const struct ptp_context_v1 *v1_context,
 	case PTP_V1_MESSAGE_DELAY_RESP:
 		expected_length = sizeof(struct delay_resp_msg_v1);
 		break;
-	case PTP_V1_MESSAGE_MANAGEMENT:
+	case PTP_V1_MESSAGE_MANAGEMENT: {
+		expected_length = sizeof(struct management_msg_v1);
+		if (v1_msg->length < expected_length)
+			return -EBADMSG;
+		expected_length += htons(v1_msg->management.parameterLength);
+
+		/*
+		 * A grotesque workaround for the fact that PTP_MM_PARENT_DATA_SET is only
+		 * 88 octets long in practice (and some PTPv1 servers will only send this),
+		 * but the encoded parameterLength is PTP_V1_MAX_MANAGEMENT_PAYLOAD_SIZE (90).
+		 */
+		if (v1_msg->management.managementMessageKey == PTP_V1_MM_PARENT_DATA_SET &&
+		    ntohs(v1_msg->management.parameterLength) == PTP_V1_MAX_MANAGEMENT_PAYLOAD_SIZE)
+			expected_length -= 2;
+
+		break;
+	}
 	default:
 		return -EBADMSG;
 	}
@@ -820,6 +851,11 @@ int v1_message_to_v2(const struct ptp_context_v1 *v1_context,
 	case DELAY_RESP:
 		err = v1_delay_resp_to_v2(v1_context, &v1_msg->delay_resp, &v2_msg->delay_resp);
 		break;
+	case MANAGEMENT:
+		err = v1_management_to_v2(v1_context, &v1_msg->management, &v2_msg->management);
+		if (err == -EPROTO)
+			err = append_v2_mgmt_error(v2_msg, MID_NOT_SUPPORTED);
+		break;
 	default:
 		err = -EINVAL;
 		break;
@@ -1059,6 +1095,9 @@ int v2_message_to_v1(const struct ptp_context_v1 *v1_context,
 	case DELAY_RESP:
 		err = v2_delay_resp_to_v1(v1_context, &v2_msg->delay_resp, &v1_msg->delay_resp);
 		break;
+	case MANAGEMENT:
+		err = v2_management_to_v1(v1_context, &v2_msg->management, &v1_msg->management);
+		break;
 	default:
 		return -EPROTO; /* ignore */
 	}
@@ -1078,7 +1117,446 @@ int v2_message_to_v1(const struct ptp_context_v1 *v1_context,
 	case DELAY_RESP:
 		v1_msg->length = sizeof(struct delay_resp_msg_v1);
 		break;
+	case MANAGEMENT:
+		v1_msg->length = sizeof(struct management_msg_v1) +
+			v1_msg->management.parameterLength;
+		break;
 	}
+
+	return 0;
+}
+
+/*
+ * We support translating PTPv2 management requests to PTPv1 management requests,
+ * and PTPv1 management responses to PTPv2 management responses; this allows the
+ * pmc tool to be used to interrogate PTPv1 servers. Providing a PTPv1 interface
+ * to ptp4l is out of scope.
+ */
+
+static int v1_null_mgmt_to_v2(const struct ptp_context_v1 *v1_context,
+			      const struct management_msg_v1 *v1_mgmt,
+			      struct management_tlv *v2_mgmt)
+{
+	return 0;
+}
+
+static int v2_null_mgmt_to_v1(const struct ptp_context_v1 *v1_context,
+			      const struct management_tlv *v2_mgmt,
+			      struct management_msg_v1 *v1_mgmt)
+{
+	return 0;
+}
+
+static int v1_default_data_set_to_v2(const struct ptp_context_v1 *v1_context,
+				     const struct management_msg_v1 *v1_mgmt,
+				     struct management_tlv *v2_mgmt)
+{
+	struct default_ds_v1 *v1_dds = (struct default_ds_v1 *) v1_mgmt->messageParameters;
+	struct defaultDS *v2_dds = (struct defaultDS *) v2_mgmt->data;
+	int err;
+
+	if (htons(v1_mgmt->parameterLength) < sizeof(*v1_dds))
+		return -EBADMSG;
+
+	v2_dds->flags = 0;
+
+	if (v1_dds->clockFollowupCapable)
+		v2_dds->flags |= DDS_TWO_STEP_FLAG;
+
+	v2_dds->numberPorts = v1_dds->numberPorts;
+
+	err = preferred_to_priority1(v1_context, v1_dds->preferred, &v2_dds->priority1);
+	if (err)
+		return err;
+
+	err = stratum_to_clockClass(v1_context, v1_dds->clockStratum,
+				    &v2_dds->clockQuality.clockClass);
+	if (err)
+		return err;
+
+	err = clockIdentifer_to_clockAccuracy(v1_dds->clockIdentifier,
+					      &v2_dds->clockQuality.clockAccuracy,
+					      NULL);
+	if (err)
+		return err;
+
+	err = isBoundaryClock_to_priority2(v1_context, v1_dds->isBoundaryClock, &v2_dds->priority2);
+	if (err)
+		return err;
+
+	err = subdomain_to_domainNumber(v1_context, v1_dds->subdomainName, &v2_dds->domainNumber);
+	if (err)
+		return err;
+
+	err = UUID_to_ClockIdentity(v1_dds->clockCommunicationTechnology,
+				    v1_dds->clockUuidField,
+				    &v2_dds->clockIdentity);
+	if (err)
+		return err;
+
+	return sizeof(*v2_dds);
+}
+
+static int v1_current_data_set_to_v2(const struct ptp_context_v1 *v1_context,
+				     const struct management_msg_v1 *v1_mgmt,
+				     struct management_tlv *v2_mgmt)
+{
+	struct current_ds_v1 *v1_cds = (struct current_ds_v1 *) v1_mgmt->messageParameters;
+	struct currentDS *v2_cds = (struct currentDS *) v2_mgmt->data;
+
+	if (htons(v1_mgmt->parameterLength) < sizeof(*v1_cds))
+		return -EBADMSG;
+
+	v2_cds->stepsRemoved = v1_cds->stepsRemoved;
+
+	if (v1_cds->offsetFromMaster.seconds)
+		return -ERANGE;
+	v2_cds->offsetFromMaster = v1_cds->offsetFromMaster.nanoseconds << 16;
+
+	if (v1_cds->oneWayDelay.seconds)
+		return -ERANGE;
+	v2_cds->meanPathDelay = v1_cds->oneWayDelay.nanoseconds << 16;
+
+	return sizeof(*v2_cds);
+}
+
+static int v1_parent_data_set_to_v2(const struct ptp_context_v1 *v1_context,
+				    const struct management_msg_v1 *v1_mgmt,
+				    struct management_tlv *v2_mgmt)
+{
+	struct parent_ds_v1 *v1_pds = (struct parent_ds_v1 *) v1_mgmt->messageParameters;
+	struct parentDS *v2_pds = (struct parentDS *) v2_mgmt->data;
+	UInteger16 offsetScaledLogVariance;
+	int err;
+
+	if (htons(v1_mgmt->parameterLength) < sizeof(*v1_pds))
+		return -EBADMSG;
+
+	err = UUID_to_PortIdentity(v1_pds->parentCommunicationTechnology,
+				   v1_pds->parentUuid,
+				   v1_pds->parentPortId,
+				   &v2_pds->parentPortIdentity);
+	if (err)
+		return err;
+
+	v2_pds->parentStats = v1_pds->parentStats;
+
+	if (v2_pds->parentStats) {
+		clockVariance_to_offsetScaledLogVariance(v1_pds->parentVariance,
+							 &offsetScaledLogVariance);
+		v2_pds->observedParentOffsetScaledLogVariance = offsetScaledLogVariance;
+	}
+
+	err = preferred_to_priority1(v1_context, v1_pds->grandmasterPreferred,
+				     &v2_pds->grandmasterPriority1);
+	if (err)
+		return err;
+
+	err = stratum_to_clockClass(v1_context, v1_pds->grandmasterStratum,
+				    &v2_pds->grandmasterClockQuality.clockClass);
+	if (err)
+		return err;
+
+	err = clockIdentifer_to_clockAccuracy(v1_pds->grandmasterIdentifier,
+					      &v2_pds->grandmasterClockQuality.clockAccuracy,
+					      NULL);
+	if (err)
+		return err;
+
+	clockVariance_to_offsetScaledLogVariance(v1_pds->grandmasterVariance,
+						 &offsetScaledLogVariance);
+	v2_pds->grandmasterClockQuality.offsetScaledLogVariance = offsetScaledLogVariance;
+
+	err = isBoundaryClock_to_priority2(v1_context, v1_pds->grandmasterIsBoundaryClock,
+					   &v2_pds->grandmasterPriority2);
+	if (err)
+		return err;
+
+	err = UUID_to_ClockIdentity(v1_pds->grandmasterCommunicationTechnology,
+				    v1_pds->grandmasterUuid,
+				    &v2_pds->grandmasterIdentity);
+	if (err)
+		return err;
+
+	return sizeof(*v2_pds);
+}
+
+static int v1_port_data_set_to_v2(const struct ptp_context_v1 *v1_context,
+				  const struct management_msg_v1 *v1_mgmt,
+				  struct management_tlv *v2_mgmt)
+{
+	struct port_ds_v1 *v1_pds = (struct port_ds_v1 *) v1_mgmt->messageParameters;
+	struct portDS *v2_pds = (struct portDS *) v2_mgmt->data;
+	int err;
+
+	if (htons(v1_mgmt->parameterLength) < sizeof(*v1_pds))
+		return -EBADMSG;
+
+	err = UUID_to_PortIdentity(v1_pds->portCommunicationTechnology,
+				   v1_pds->portUuid,
+				   v1_pds->portId,
+				   &v2_pds->portIdentity);
+	if (err)
+		return err;
+
+	v2_pds->portState = v1_pds->portState;
+	v2_pds->versionNumber = PTP_V1_VERSION_PTP;
+
+	return sizeof(*v2_pds);
+}
+
+static struct management_map_entry {
+	Enumeration8 key;
+	Enumeration8 action;
+	Enumeration16 id;
+	int (*v1_to_v2)(const struct ptp_context_v1 *v1_context,
+			const struct management_msg_v1 *v1_mgmt,
+			struct management_tlv *v2_mgmt);
+	int (*v2_to_v1)(const struct ptp_context_v1 *v1_context,
+			const struct management_tlv *v1_mgmt,
+			struct management_msg_v1 *v2_mgmt);
+} management_map[] = {
+	{
+		PTP_V1_MM_NULL,
+		GET,
+		MID_NULL_MANAGEMENT,
+		v1_null_mgmt_to_v2,
+		v2_null_mgmt_to_v1
+	},
+	{
+		PTP_V1_MM_NULL,
+		SET,
+		MID_NULL_MANAGEMENT,
+		v1_null_mgmt_to_v2,
+		v2_null_mgmt_to_v1
+	},
+	{
+		PTP_V1_MM_NULL,
+		COMMAND,
+		MID_NULL_MANAGEMENT,
+		v1_null_mgmt_to_v2,
+		v2_null_mgmt_to_v1
+	},
+	{
+		PTP_V1_MM_GET_DEFAULT_DATA_SET,
+		GET,
+		MID_DEFAULT_DATA_SET,
+		NULL,
+		NULL,
+	},
+	{
+		PTP_V1_MM_DEFAULT_DATA_SET,
+		RESPONSE,
+		MID_DEFAULT_DATA_SET,
+		v1_default_data_set_to_v2,
+		NULL,
+	},
+	{
+		PTP_V1_MM_GET_PARENT_DATA_SET,
+		GET,
+		MID_PARENT_DATA_SET,
+		NULL,
+		NULL,
+	},
+	{
+		PTP_V1_MM_PARENT_DATA_SET,
+		RESPONSE,
+		MID_PARENT_DATA_SET,
+		v1_parent_data_set_to_v2,
+		NULL,
+	},
+	{
+		PTP_V1_MM_GET_CURRENT_DATA_SET,
+		GET,
+		MID_CURRENT_DATA_SET,
+		NULL,
+		NULL,
+	},
+	{
+		PTP_V1_MM_CURRENT_DATA_SET,
+		RESPONSE,
+		MID_CURRENT_DATA_SET,
+		v1_current_data_set_to_v2,
+		NULL,
+	},
+	{
+		PTP_V1_MM_GET_PORT_DATA_SET,
+		GET,
+		MID_PORT_DATA_SET,
+		NULL,
+		NULL,
+	},
+	{
+		PTP_V1_MM_PORT_DATA_SET,
+		RESPONSE,
+		MID_PORT_DATA_SET,
+		v1_port_data_set_to_v2,
+		NULL,
+	},
+};
+
+static int v1_management_to_v2(const struct ptp_context_v1 *v1_context,
+			       const struct management_msg_v1 *v1_mgmt,
+			       struct management_msg *v2_mgmt)
+{
+	int err;
+	struct management_map_entry *entry = NULL;
+	struct management_tlv *tlv;
+	size_t i;
+	int16_t startingBoundaryHops, boundaryHops;
+
+	if (htons(v1_mgmt->parameterLength) > PTP_V1_MAX_MANAGEMENT_PAYLOAD_SIZE)
+		return -EBADMSG;
+
+	err = UUID_to_PortIdentity(v1_mgmt->targetCommunicationTechnology,
+				   v1_mgmt->targetUuid,
+				   v1_mgmt->targetPortId,
+				   &v2_mgmt->targetPortIdentity);
+	if (err)
+		return err;
+
+	/*
+	 * TODO: Clause 6.2.2.1: if boundaryHops is negative, transmit only if
+	 * port is not in INITIALIZING state.
+	 */
+
+	startingBoundaryHops = ntohs(v1_mgmt->startingBoundaryHops);
+	if (startingBoundaryHops == 0x7FFF)
+		v2_mgmt->startingBoundaryHops = 0x7F;
+	else if (abs(startingBoundaryHops) > UINT8_MAX)
+		return -EBADMSG;
+
+	boundaryHops = ntohs(v1_mgmt->boundaryHops);
+	if (abs(boundaryHops) > UINT8_MAX)
+		return -EBADMSG;
+
+	v2_mgmt->startingBoundaryHops = htons(startingBoundaryHops) & 0xFF;
+	v2_mgmt->boundaryHops = htons(boundaryHops) & 0xFF;
+
+	tlv = (struct management_tlv *) v2_mgmt->suffix;
+	tlv->type = TLV_MANAGEMENT;
+
+	for (i = 0; i < ARRAY_SIZE(management_map); i++) {
+		if (v1_mgmt->managementMessageKey == management_map[i].key) {
+			entry = &management_map[i];
+			break;
+		}
+	}
+
+	if (entry == NULL || entry->v1_to_v2 == NULL)
+		return -EPROTO;
+
+	v2_mgmt->flags = entry->action;
+
+	err = entry->v1_to_v2(v1_context, v1_mgmt, tlv);
+	if (err < 0)
+		return err;
+
+	tlv->id = htons(entry->id);
+	tlv->length = ntohs(2 + err); /* includes size of id */
+
+	v2_mgmt->hdr.messageLength =
+		htons(sizeof(struct management_msg) + sizeof(struct management_tlv) + err);
+
+	return 0;
+}
+
+static int append_v2_mgmt_error(struct ptp_message *msg, uint16_t error_id)
+{
+	struct management_error_status *mes;
+	struct management_tlv *tlv;
+	struct tlv_extra *extra;
+
+	tlv = (struct management_tlv *) msg->management.suffix;
+
+	extra = msg_tlv_append(msg, sizeof(*msg));
+	if (extra == NULL)
+		return -ENOMEM;
+
+	mes = (struct management_error_status *) extra->tlv;
+	mes->type = TLV_MANAGEMENT_ERROR_STATUS;
+	mes->length = 8;
+	mes->error = error_id;
+	mes->id = tlv->id;
+
+	return 0;
+}
+
+static int v2_management_to_v1(const struct ptp_context_v1 *v1_context,
+			       const struct management_msg *v2_mgmt,
+			       struct management_msg_v1 *v1_mgmt)
+{
+	struct management_map_entry *entry = NULL;
+	struct management_tlv *tlv;
+	struct PortIdentity wildcard = {
+		.clockIdentity = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}},
+		.portNumber = 0xFFFF
+	};
+	struct PortIdentity parentPortIdentity = clock_parent_identity(v1_context->clock);
+	struct PortIdentity *targetPortIdentity =
+		(struct PortIdentity *)&v2_mgmt->targetPortIdentity;
+	UInteger16 targetPortId;
+	size_t i;
+	int err;
+
+	/*
+	 * PTPv1 doesn't support wildcard port identities. If we receive a PTPv2 for the
+	 * wildcard port identity, map it to the parent port identity.
+	 */
+
+	if (pid_eq(targetPortIdentity, &wildcard)) {
+		err = PortIdentity_to_UUID(&parentPortIdentity,
+					   &v1_mgmt->targetCommunicationTechnology,
+					   v1_mgmt->targetUuid,
+					   &targetPortId);
+	} else {
+		err = PortIdentity_to_UUID(&v2_mgmt->targetPortIdentity,
+					   &v1_mgmt->targetCommunicationTechnology,
+					   v1_mgmt->targetUuid,
+					   &targetPortId);
+	}
+	if (err)
+		return err;
+
+	v1_mgmt->targetPortId = targetPortId;
+	v1_mgmt->startingBoundaryHops = v1_mgmt->startingBoundaryHops;
+	v1_mgmt->boundaryHops = v1_mgmt->boundaryHops;
+
+	tlv = (struct management_tlv *) v2_mgmt->suffix;
+	if (ntohs(tlv->type) != TLV_MANAGEMENT ||
+	    ntohs(tlv->length) < sizeof(tlv->id)) {
+		pr_err("PTPv1 received invalid management TLV");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(management_map); i++) {
+		if ((v2_mgmt->flags & 0xf) == management_map[i].action &&
+		    ntohs(tlv->id) == management_map[i].id) {
+			entry = &management_map[i];
+			break;
+		}
+	}
+
+	if (entry == NULL) {
+		pr_warning("no PTPv1 mapping for management ID %d", ntohs(tlv->id));
+		return -EPROTO;
+	}
+
+	v1_mgmt->managementMessageKey = entry->key;
+
+	if (entry->v2_to_v1) {
+		err = entry->v2_to_v1(v1_context, tlv, v1_mgmt);
+		if (ntohs(v1_mgmt->parameterLength) > PTP_V1_MAX_MANAGEMENT_PAYLOAD_SIZE)
+			return -ERANGE;
+	} else if (entry->action == GET || entry->action == COMMAND) {
+		err = 0;
+		v1_mgmt->parameterLength = 0;
+	} else {
+		err = -EPROTO;
+	}
+
+	if (err)
+		return err;
 
 	return 0;
 }
