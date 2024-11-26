@@ -3884,6 +3884,11 @@ void port_update_unicast_state(struct port *p)
 	}
 }
 
+struct clock *port_clock(struct port *p)
+{
+	return p->clock;
+}
+
 void port_set_version(struct port *p, UInteger8 versionNumber)
 {
 	p->versionNumber = versionNumber;

@@ -367,6 +367,13 @@ void tc_cleanup(void);
 void port_update_unicast_state(struct port *p);
 
 /**
+ * Obtain the PTP clock of the port.
+ * @param p        A port instance.
+ * @return         The PTP clock of 'p'.
+ */
+struct clock *port_clock(struct port *p);
+
+/**
  * Set the PTP version of the port.
  * @param p             A port instance.
  * @param versionNumber The PTP version number.
