@@ -3861,3 +3861,13 @@ void port_update_unicast_state(struct port *p)
 		p->unicast_state_dirty = false;
 	}
 }
+
+UInteger8 port_version(struct port *p)
+{
+	return p->versionNumber;
+}
+
+void port_set_version(struct port *p, UInteger8 versionNumber)
+{
+	p->versionNumber = versionNumber;
+}
