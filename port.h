@@ -366,4 +366,18 @@ void tc_cleanup(void);
  */
 void port_update_unicast_state(struct port *p);
 
+/**
+ * Obtain the PTP version of the port.
+ * @param p        A port instance.
+ * @return         The PTP version number of 'p'.
+ */
+UInteger8 port_version(struct port *p);
+
+/**
+ * Set the PTP version of the port.
+ * @param p             A port instance.
+ * @param versionNumber The PTP version number.
+ */
+void port_set_version(struct port *p, UInteger8 versionNumber);
+
 #endif
