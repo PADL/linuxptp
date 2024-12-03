@@ -120,10 +120,14 @@ static void address_to_portaddress(struct address *addr,
 
 	switch (paddr->networkProtocol) {
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		len = sizeof(addr->sin.sin_addr.s_addr);
 		memcpy(paddr->address, &addr->sin.sin_addr.s_addr, len);
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		len = sizeof(addr->sin6.sin6_addr.s6_addr);
 		memcpy(paddr->address, &addr->sin6.sin6_addr.s6_addr, len);
 		break;
@@ -955,6 +959,10 @@ static int port_management_fill_response(struct port *target,
 		case TRANS_UDP_IPV6:
 		case TRANS_IEEE_802_3:
 			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3");
+			break;
+		case TRANS_V1_UDP_IPV4_NP:
+		case TRANS_V1_UDP_IPV6_NP:
+			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3 (PTPv1)");
 			break;
 		default:
 			ptp_text_set(cd->physicalLayerProtocol, NULL);
@@ -3104,6 +3112,38 @@ enum fsm_event port_event(struct port *p, int fd_index)
 	return p->event(p, fd_index);
 }
 
+static enum fsm_event port_recv_pending(struct port *p, enum fsm_event event)
+{
+	struct ptp_message *msg;
+	int cnt;
+
+	msg = msg_allocate();
+	if (!msg) {
+		transport_flush_pending(p->trp);
+		return event;
+	}
+	msg->hwts.type = p->timestamping;
+
+	cnt = transport_recv_pending(p->trp, msg);
+	if (cnt < 0) {
+		goto out;
+	}
+	if (msg_post_recv(msg, cnt)) {
+		pr_err("%s: bad synthetic message", p->log_name);
+		goto out;
+	}
+	port_stats_inc_rx(p, msg);
+	if (port_ignore(p, msg)) {
+		goto out;
+	}
+	if (msg_type(msg) == ANNOUNCE && process_announce(p, msg)) {
+		event = EV_STATE_DECISION_EVENT;
+	}
+out:
+	msg_put(msg);
+	return event;
+}
+
 static enum fsm_event bc_event(struct port *p, int fd_index)
 {
 	enum fsm_event event = EV_NONE;
@@ -3235,11 +3275,14 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		msg_put(msg);
 		return EV_FAULT_DETECTED;
 	}
+	if (transport_pending(p->trp)) {
+		event = port_recv_pending(p, event);
+	}
 	if (port_has_security(p)) {
 		dup = msg_duplicate(msg, 0);
 		if (!dup) {
 			msg_put(msg);
-			return EV_NONE;
+			return event;
 		}
 	}
 	err = msg_post_recv(msg, cnt);
@@ -3256,7 +3299,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	port_stats_inc_rx(p, msg);
 	if (port_ignore(p, msg)) {
@@ -3264,7 +3307,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	if (msg_sots_missing(msg) &&
 	    !(p->timestamping == TS_P2P1STEP && msg_type(msg) == PDELAY_REQ)) {
@@ -3274,7 +3317,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	err = sad_process_auth(clock_config(p->clock), p->spp, msg, dup);
 	if (err) {
@@ -3290,7 +3333,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	if (msg_sots_valid(msg)) {
 		ts_add(&msg->hwts.ts, -p->rx_timestamp_offset);
@@ -3344,6 +3387,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	if (dup) {
 		msg_put(dup);
 	}
+
 	return event;
 }
 
@@ -3649,6 +3693,24 @@ struct port *port_open(const char *phc_device,
 		goto err_log_name;
 	}
 
+	/*
+	 * Only bc_event() drains the synthetic ANNOUNCE that the PTPv1
+	 * transport queues alongside each SYNC; the transparent clock
+	 * event loops would silently discard it.
+	 */
+	switch (transport_type(p->trp)) {
+	case TRANS_V1_UDP_IPV4_NP:
+	case TRANS_V1_UDP_IPV6_NP:
+		if (p->event != bc_event) {
+			pr_err("%s: PTPv1 transport requires an ordinary or boundary clock",
+			       p->log_name);
+			goto err_transport;
+		}
+		break;
+	default:
+		break;
+	}
+
 	if (p->bmca == BMCA_NOOP && !port_is_uds(p)) {
 		if (p->master_only) {
 			p->state_machine = designated_master_fsm;
@@ -3712,7 +3774,7 @@ struct port *port_open(const char *phc_device,
 	p->portIdentity.portNumber = number;
 	p->state = PS_INITIALIZING;
 	p->delayMechanism = config_get_int(cfg, p->name, "delay_mechanism");
-	p->versionNumber = PTP_MAJOR_VERSION;
+	p->versionNumber = transport_ptp_version(p->trp);
 	p->pwr.version =
 		config_get_int(cfg, p->name, "power_profile.version");
 	p->pwr.grandmasterID =

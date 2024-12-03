@@ -25,6 +25,8 @@
 #include "udp.h"
 #include "udp6.h"
 #include "uds.h"
+#include "v1_msg.h"
+#include "v1_transport.h"
 
 int transport_close(struct transport *t, struct fdarray *fda)
 {
@@ -40,6 +42,25 @@ int transport_open(struct transport *t, struct interface *iface,
 int transport_recv(struct transport *t, int fd, struct ptp_message *msg)
 {
 	return t->recv(t, fd, msg, sizeof(msg->data), &msg->address, &msg->hwts);
+}
+
+int transport_pending(struct transport *t)
+{
+	return t->pending_msg;
+}
+
+int transport_recv_pending(struct transport *t, struct ptp_message *msg)
+{
+	if (!t->pending_msg)
+		return -ENOENT;
+
+	t->pending_msg = 0;
+	return t->recv(t, -1, msg, sizeof(msg->data), &msg->address, &msg->hwts);
+}
+
+void transport_flush_pending(struct transport *t)
+{
+	t->pending_msg = 0;
 }
 
 int transport_send(struct transport *t, struct fdarray *fda,
@@ -98,6 +119,17 @@ enum transport_type transport_type(struct transport *t)
 	return t->type;
 }
 
+UInteger8 transport_ptp_version(struct transport *t)
+{
+	switch (t->type) {
+	case TRANS_V1_UDP_IPV4_NP:
+	case TRANS_V1_UDP_IPV6_NP:
+		return PTP_V1_VERSION_PTP;
+	default:
+		return PTP_MAJOR_VERSION;
+	}
+}
+
 struct transport *transport_create(struct config *cfg,
 				   void *context,
 				   enum transport_type type)
@@ -119,6 +151,12 @@ struct transport *transport_create(struct config *cfg,
 	case TRANS_DEVICENET:
 	case TRANS_CONTROLNET:
 	case TRANS_PROFINET:
+		break;
+	case TRANS_V1_UDP_IPV4_NP:
+		t = v1_udp_transport_create();
+		break;
+	case TRANS_V1_UDP_IPV6_NP:
+		t = v1_udp6_transport_create();
 		break;
 	}
 	if (t) {
