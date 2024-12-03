@@ -120,10 +120,14 @@ static void address_to_portaddress(struct address *addr,
 
 	switch (paddr->networkProtocol) {
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		len = sizeof(addr->sin.sin_addr.s_addr);
 		memcpy(paddr->address, &addr->sin.sin_addr.s_addr, len);
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		len = sizeof(addr->sin6.sin6_addr.s6_addr);
 		memcpy(paddr->address, &addr->sin6.sin6_addr.s6_addr, len);
 		break;
@@ -955,6 +959,10 @@ static int port_management_fill_response(struct port *target,
 		case TRANS_UDP_IPV6:
 		case TRANS_IEEE_802_3:
 			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3");
+			break;
+		case TRANS_V1_UDP_IPV4_NP:
+		case TRANS_V1_UDP_IPV6_NP:
+			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3 (PTPv1)");
 			break;
 		default:
 			ptp_text_set(cd->physicalLayerProtocol, NULL);
@@ -3290,6 +3298,28 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		}
 	}
 
+	/*
+	 * Drain any pending synthetic message queued by the transport
+	 * (e.g. a PTPv1 SYNC produces both a SYNC and a synthetic ANNOUNCE)
+	 * before dispatching the current message, so the foreign-master
+	 * state established by the ANNOUNCE is visible to the SYNC handler.
+	 */
+	if (transport_pending(p->trp)) {
+		struct ptp_message *synth = msg_allocate();
+		if (synth) {
+			int scnt;
+
+			synth->hwts.type = p->timestamping;
+			scnt = transport_recv_pending(p->trp, synth);
+			if (scnt >= 0 && msg_post_recv(synth, scnt) == 0 &&
+			    msg_type(synth) == ANNOUNCE) {
+				if (process_announce(p, synth))
+					event = EV_STATE_DECISION_EVENT;
+			}
+			msg_put(synth);
+		}
+	}
+
 	switch (msg_type(msg)) {
 	case SYNC:
 		process_sync(p, msg);
@@ -3334,6 +3364,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	if (dup) {
 		msg_put(dup);
 	}
+
 	return event;
 }
 

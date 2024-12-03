@@ -39,6 +39,9 @@ enum transport_type {
 	TRANS_DEVICENET,
 	TRANS_CONTROLNET,
 	TRANS_PROFINET,
+	/* IEEE 1588-2002 with translation layer */
+	TRANS_V1_UDP_IPV4_NP = 0xFFFC,
+	TRANS_V1_UDP_IPV6_NP = 0xFFFD,
 };
 
 /**
@@ -61,6 +64,26 @@ int transport_open(struct transport *t, struct interface *iface,
 		   struct fdarray *fda, enum timestamp_type tt);
 
 int transport_recv(struct transport *t, int fd, struct ptp_message *msg);
+
+/**
+ * Check whether the transport has a pending synthetic message.
+ * @param t	The transport.
+ * @return	Non-zero if a pending message is available.
+ */
+int transport_pending(struct transport *t);
+
+/**
+ * Receives a pending synthetic message from the transport, if any.
+ * Some transports (e.g. PTPv1) may generate a second message from
+ * a single network receive (e.g. a synthetic ANNOUNCE derived from
+ * a PTPv1 SYNC). This function drains that pending message without
+ * re-entering the port event machinery.
+ * @param t	The transport.
+ * @param msg	The message buffer.
+ * @return	Number of bytes received, or negative value if no
+ *		pending message is available.
+ */
+int transport_recv_pending(struct transport *t, struct ptp_message *msg);
 
 /**
  * Sends the PTP message using the given transport. The message is sent to
