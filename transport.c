@@ -25,6 +25,7 @@
 #include "udp.h"
 #include "udp6.h"
 #include "uds.h"
+#include "v1_transport.h"
 
 int transport_close(struct transport *t, struct fdarray *fda)
 {
@@ -119,6 +120,12 @@ struct transport *transport_create(struct config *cfg,
 	case TRANS_DEVICENET:
 	case TRANS_CONTROLNET:
 	case TRANS_PROFINET:
+		break;
+	case TRANS_V1_UDP_IPV4_NP:
+		t = v1_udp_transport_create();
+		break;
+	case TRANS_V1_UDP_IPV6_NP:
+		t = v1_udp6_transport_create();
 		break;
 	}
 	if (t) {
