@@ -108,11 +108,15 @@ int addreq(enum transport_type type, struct address *a, struct address *b)
 
 	switch (type) {
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		bufa = &a->sin.sin_addr;
 		bufb = &b->sin.sin_addr;
 		len = sizeof(a->sin.sin_addr);
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		bufa = &a->sin6.sin6_addr;
 		bufb = &b->sin6.sin6_addr;
 		len = sizeof(a->sin6.sin6_addr);
@@ -189,11 +193,15 @@ char *portaddr2str(struct PortAddress *addr)
 	static char buf[BIN_BUF_SIZE];
 	switch (align16(&addr->networkProtocol)) {
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		if (align16(&addr->addressLength) == 4
 			&& inet_ntop(AF_INET, addr->address, buf, sizeof(buf)))
 			return buf;
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		if (align16(&addr->addressLength) == 16
 			&& inet_ntop(AF_INET6, addr->address, buf, sizeof(buf)))
 			return buf;
@@ -308,6 +316,8 @@ int str2addr(enum transport_type type, const char *s, struct address *addr)
 		pr_err("sorry, cannot convert addresses for this transport");
 		return -1;
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		if (!inet_aton(s, &ipv4_addr)) {
 			pr_err("bad IPv4 address");
 			return -1;
@@ -317,6 +327,8 @@ int str2addr(enum transport_type type, const char *s, struct address *addr)
 		addr->len = sizeof(addr->sin);
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		if (1 != inet_pton(AF_INET6, s, &ipv6_addr)) {
 			pr_err("bad IPv6 address");
 			return -1;
