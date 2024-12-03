@@ -120,10 +120,14 @@ static void address_to_portaddress(struct address *addr,
 
 	switch (paddr->networkProtocol) {
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		len = sizeof(addr->sin.sin_addr.s_addr);
 		memcpy(paddr->address, &addr->sin.sin_addr.s_addr, len);
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		len = sizeof(addr->sin6.sin6_addr.s6_addr);
 		memcpy(paddr->address, &addr->sin6.sin6_addr.s6_addr, len);
 		break;
@@ -954,6 +958,8 @@ static int port_management_fill_response(struct port *target,
 		case TRANS_UDP_IPV4:
 		case TRANS_UDP_IPV6:
 		case TRANS_IEEE_802_3:
+		case TRANS_V1_UDP_IPV4_NP:
+		case TRANS_V1_UDP_IPV6_NP:
 			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3");
 			break;
 		default:
@@ -3104,6 +3110,38 @@ enum fsm_event port_event(struct port *p, int fd_index)
 	return p->event(p, fd_index);
 }
 
+static enum fsm_event port_recv_pending(struct port *p, enum fsm_event event)
+{
+	struct ptp_message *msg;
+	int cnt;
+
+	msg = msg_allocate();
+	if (!msg) {
+		transport_flush_pending(p->trp);
+		return event;
+	}
+	msg->hwts.type = p->timestamping;
+
+	cnt = transport_recv_pending(p->trp, msg);
+	if (cnt < 0) {
+		goto out;
+	}
+	if (msg_post_recv(msg, cnt)) {
+		pr_err("%s: bad synthetic message", p->log_name);
+		goto out;
+	}
+	port_stats_inc_rx(p, msg);
+	if (port_ignore(p, msg)) {
+		goto out;
+	}
+	if (msg_type(msg) == ANNOUNCE && process_announce(p, msg)) {
+		event = EV_STATE_DECISION_EVENT;
+	}
+out:
+	msg_put(msg);
+	return event;
+}
+
 static enum fsm_event bc_event(struct port *p, int fd_index)
 {
 	enum fsm_event event = EV_NONE;
@@ -3235,11 +3273,14 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		msg_put(msg);
 		return EV_FAULT_DETECTED;
 	}
+	if (transport_pending(p->trp)) {
+		event = port_recv_pending(p, event);
+	}
 	if (port_has_security(p)) {
 		dup = msg_duplicate(msg, 0);
 		if (!dup) {
 			msg_put(msg);
-			return EV_NONE;
+			return event;
 		}
 	}
 	err = msg_post_recv(msg, cnt);
@@ -3256,7 +3297,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	port_stats_inc_rx(p, msg);
 	if (port_ignore(p, msg)) {
@@ -3264,7 +3305,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	if (msg_sots_missing(msg) &&
 	    !(p->timestamping == TS_P2P1STEP && msg_type(msg) == PDELAY_REQ)) {
@@ -3274,7 +3315,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	err = sad_process_auth(clock_config(p->clock), p->spp, msg, dup);
 	if (err) {
@@ -3290,7 +3331,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		if (dup) {
 			msg_put(dup);
 		}
-		return EV_NONE;
+		return event;
 	}
 	if (msg_sots_valid(msg)) {
 		ts_add(&msg->hwts.ts, -p->rx_timestamp_offset);
@@ -3594,6 +3635,59 @@ err:
 	msg_put(msg);
 }
 
+/*
+ * The PTPv1 transport translates to and from IEEE 1588-2002, which has
+ * no equivalent for a number of PTPv2 features.
+ */
+static int port_v1_check(struct port *p, struct config *cfg)
+{
+	struct ClockIdentity cid = clock_identity(p->clock);
+
+	/*
+	 * Only bc_event() drains the synthetic ANNOUNCE that the PTPv1
+	 * transport queues alongside each SYNC; the transparent clock
+	 * event loops would silently discard it.
+	 */
+	if (p->event != bc_event) {
+		pr_err("%s: PTPv1 transport requires an ordinary or boundary clock",
+		       p->log_name);
+		return -1;
+	}
+	/* The hardware would insert the time stamp at the PTPv2 offset. */
+	if (p->timestamping == TS_ONESTEP || p->timestamping == TS_P2P1STEP) {
+		pr_err("%s: PTPv1 transport does not support one-step time stamping",
+		       p->log_name);
+		return -1;
+	}
+	if (p->delayMechanism == DM_P2P || p->delayMechanism == DM_COMMON_P2P) {
+		pr_err("%s: PTPv1 transport does not support peer delay",
+		       p->log_name);
+		return -1;
+	}
+	if (port_has_security(p)) {
+		pr_err("%s: PTPv1 transport does not support spp", p->log_name);
+		return -1;
+	}
+	/* A PTPv1 SYNC carries the data of the last ANNOUNCE sent. */
+	if (config_get_int(cfg, p->name, "inhibit_announce")) {
+		pr_err("%s: PTPv1 transport does not support inhibit_announce",
+		       p->log_name);
+		return -1;
+	}
+	/* SIGNALING is not translated, and DELAY_REQ is always multicast. */
+	if (p->hybrid_e2e || config_get_int(cfg, p->name, "unicast_listen")) {
+		pr_err("%s: PTPv1 transport does not support unicast", p->log_name);
+		return -1;
+	}
+	/* A PTPv1 UUID is an EUI-48, see Clause 18.3.7 of IEEE 1588-2008. */
+	if (cid.id[3] != 0xFF || cid.id[4] != 0xFE) {
+		pr_err("%s: PTPv1 transport needs a clockIdentity derived from an EUI-48",
+		       p->log_name);
+		return -1;
+	}
+	return 0;
+}
+
 struct port *port_open(const char *phc_device,
 		       int phc_index,
 		       enum timestamp_type timestamping,
@@ -3712,7 +3806,7 @@ struct port *port_open(const char *phc_device,
 	p->portIdentity.portNumber = number;
 	p->state = PS_INITIALIZING;
 	p->delayMechanism = config_get_int(cfg, p->name, "delay_mechanism");
-	p->versionNumber = PTP_MAJOR_VERSION;
+	p->versionNumber = transport_ptp_version(p->trp);
 	p->pwr.version =
 		config_get_int(cfg, p->name, "power_profile.version");
 	p->pwr.grandmasterID =
@@ -3770,6 +3864,10 @@ struct port *port_open(const char *phc_device,
 	}
 	if (port_has_security(p) && (config_get_int(cfg, NULL, "ptp_minor_version") < 1)) {
 		pr_err("%s: spp needs at least PTPv2.1", p->log_name);
+		goto err_uc_service;
+	}
+	if (transport_ptp_version(p->trp) != PTP_MAJOR_VERSION &&
+	    port_v1_check(p, cfg)) {
 		goto err_uc_service;
 	}
 

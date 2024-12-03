@@ -295,6 +295,11 @@ static int nsm_open(struct nsm *nsm, struct config *cfg)
 	}
 
 	transport = config_get_int(cfg, name, "network_transport");
+	if (transport == TRANS_V1_UDP_IPV4_NP ||
+	    transport == TRANS_V1_UDP_IPV6_NP) {
+		pr_err("PTPv1 transport is only available with ptp4l");
+		return -1;
+	}
 
 	if (generate_clock_identity(&nsm->port_identity.clockIdentity, name)) {
 		pr_err("failed to generate a clock identity");
