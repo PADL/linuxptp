@@ -39,6 +39,9 @@ enum transport_type {
 	TRANS_DEVICENET,
 	TRANS_CONTROLNET,
 	TRANS_PROFINET,
+	/* IEEE 1588-2002 with translation layer */
+	TRANS_V1_UDP_IPV4_NP = 0xFFFC,
+	TRANS_V1_UDP_IPV6_NP = 0xFFFD,
 };
 
 /**

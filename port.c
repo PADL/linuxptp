@@ -120,10 +120,14 @@ static void address_to_portaddress(struct address *addr,
 
 	switch (paddr->networkProtocol) {
 	case TRANS_UDP_IPV4:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV4_NP:
 		len = sizeof(addr->sin.sin_addr.s_addr);
 		memcpy(paddr->address, &addr->sin.sin_addr.s_addr, len);
 		break;
 	case TRANS_UDP_IPV6:
+		/* fallthrough */
+	case TRANS_V1_UDP_IPV6_NP:
 		len = sizeof(addr->sin6.sin6_addr.s6_addr);
 		memcpy(paddr->address, &addr->sin6.sin6_addr.s6_addr, len);
 		break;
@@ -956,6 +960,10 @@ static int port_management_fill_response(struct port *target,
 		case TRANS_UDP_IPV6:
 		case TRANS_IEEE_802_3:
 			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3");
+			break;
+		case TRANS_V1_UDP_IPV4_NP:
+		case TRANS_V1_UDP_IPV6_NP:
+			ptp_text_set(cd->physicalLayerProtocol, "IEEE 802.3 (PTPv1)");
 			break;
 		default:
 			ptp_text_set(cd->physicalLayerProtocol, NULL);
