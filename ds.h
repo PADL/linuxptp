@@ -86,7 +86,15 @@ struct parent_ds {
 };
 
 #define CURRENT_UTC_OFFSET  37 /* 1 Jan 2017 */
+
+/* timeSource values, Table 6 of IEEE 1588-2019 */
+#define ATOMIC_CLOCK        0x10
+#define GNSS                0x20
+#define NTP                 0x50
+#define HAND_SET            0x60
+#define OTHER               0x90
 #define INTERNAL_OSCILLATOR 0xA0
+
 #define CLOCK_CLASS_THRESHOLD_DEFAULT 248
 
 struct timePropertiesDS {

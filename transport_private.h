@@ -29,6 +29,7 @@
 struct transport {
 	enum transport_type type;
 	struct config *cfg;
+	int pending_msg;
 
 	int (*close)(struct transport *t, struct fdarray *fda);
 
