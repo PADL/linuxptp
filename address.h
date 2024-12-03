@@ -20,11 +20,13 @@
 #ifndef HAVE_ADDRESS_H
 #define HAVE_ADDRESS_H
 
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <net/if_arp.h>
+#include <errno.h>
 
 struct address {
 	socklen_t len;
@@ -54,6 +56,36 @@ static inline size_t address_length(sa_family_t family)
 	default:
 		return sizeof(struct sockaddr_storage);
 	}
+}
+
+static inline int string_to_address(sa_family_t family,
+				    const char *src,
+				    struct address *address)
+{
+	int err;
+	void *dst;
+
+	switch (family) {
+	case AF_INET:
+		dst = &address->sin.sin_addr.s_addr;
+		break;
+	case AF_INET6:
+		dst = address->sin6.sin6_addr.s6_addr;
+		break;
+	default:
+		return -EAFNOSUPPORT;
+	}
+
+	address->len = address_length(family);
+	address->sa.sa_family = family;
+
+	err = inet_pton(family, src, dst);
+	if (err == 1)
+		return 0;
+	else if (err < 0)
+		return -errno;
+	else
+		return -EINVAL;
 }
 
 #endif
