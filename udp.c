@@ -35,10 +35,8 @@
 #include "sk.h"
 #include "ether.h"
 #include "transport_private.h"
+#include "udp_private.h"
 #include "udp.h"
-
-#define EVENT_PORT        319
-#define GENERAL_PORT      320
 
 struct udp {
 	struct transport t;
@@ -89,13 +87,16 @@ static int udp_close(struct transport *t, struct fdarray *fda)
 	return 0;
 }
 
-static int open_socket(struct interface *iface, int event,
-		       struct in_addr mc_addr[2], short port, int ttl,
-		       enum timestamp_type ts_type)
+int udp_open_socket(struct interface *iface, int event,
+		    const struct in_addr *mc_addrs,
+		    size_t num_mc_addrs, short port, int ttl,
+		    enum timestamp_type ts_type,
+		    enum transport_type trans_type)
 {
 	const char *name = interface_name(iface);
 	struct sockaddr_in addr;
 	int fd, index, on = 1;
+	size_t i;
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
@@ -118,7 +119,7 @@ static int open_socket(struct interface *iface, int event,
 
 	if (event) {
 		if (sk_timestamping_init(fd, interface_label(iface), ts_type,
-					 TRANS_UDP_IPV4,
+					 trans_type,
 					 interface_get_vclock(iface)))
 			goto no_option;
 	} else {
@@ -138,16 +139,16 @@ static int open_socket(struct interface *iface, int event,
 		pr_err("setsockopt IP_MULTICAST_TTL failed: %m");
 		goto no_option;
 	}
-	addr.sin_addr = mc_addr[0];
-	if (mcast_join(fd, index, &addr)) {
-		pr_err("mcast_join failed");
-		goto no_option;
+
+	for (i = 0; i < num_mc_addrs; i++) {
+		addr.sin_addr = mc_addrs[i];
+
+		if (mcast_join(fd, index, &addr)) {
+			pr_err("mcast_join failed");
+			goto no_option;
+		}
 	}
-	addr.sin_addr = mc_addr[1];
-	if (mcast_join(fd, index, &addr)) {
-		pr_err("mcast_join failed");
-		goto no_option;
-	}
+
 	if (mcast_bind(fd, index)) {
 		goto no_option;
 	}
@@ -157,8 +158,6 @@ no_option:
 no_socket:
 	return -1;
 }
-
-enum { MC_PRIMARY, MC_PDELAY };
 
 static int udp_open(struct transport *t, struct interface *iface,
 		    struct fdarray *fda, enum timestamp_type ts_type)
@@ -188,11 +187,13 @@ static int udp_open(struct transport *t, struct interface *iface,
 		return -1;
 	}
 
-	efd = open_socket(iface, 1, udp->mcast_addr, EVENT_PORT, ttl, ts_type);
+	efd = udp_open_socket(iface, 1, udp->mcast_addr, ARRAY_SIZE(udp->mcast_addr),
+			      EVENT_PORT, ttl, ts_type, TRANS_UDP_IPV4);
 	if (efd < 0)
 		goto no_event;
 
-	gfd = open_socket(iface, 0, udp->mcast_addr, GENERAL_PORT, ttl, ts_type);
+	gfd = udp_open_socket(iface, 0, udp->mcast_addr, ARRAY_SIZE(udp->mcast_addr),
+			      GENERAL_PORT, ttl, ts_type, TRANS_UDP_IPV4);
 	if (gfd < 0)
 		goto no_general;
 
