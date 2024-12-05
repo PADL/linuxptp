@@ -35,12 +35,8 @@
 #include "sk.h"
 #include "ether.h"
 #include "transport_private.h"
+#include "udp_private.h"
 #include "udp6.h"
-
-#define EVENT_PORT        319
-#define GENERAL_PORT      320
-
-enum { MC_PRIMARY, MC_PDELAY };
 
 struct udp6 {
 	struct transport t;
@@ -49,11 +45,6 @@ struct udp6 {
 	struct address mac;
 	struct in6_addr mc6_addr[2];
 };
-
-static int is_link_local(struct in6_addr *addr)
-{
-	return addr->s6_addr[1] == 0x02 ? 1 : 0;
-}
 
 static int mc_bind(int fd, int index)
 {
@@ -97,11 +88,13 @@ static int udp6_close(struct transport *t, struct fdarray *fda)
 	return 0;
 }
 
-static int open_socket_ipv6(const char *name, struct in6_addr mc_addr[2], short port,
-			    int *interface_index, int hop_limit)
+int udp6_open_socket(const char *name, const struct in6_addr *mc_addrs,
+		     size_t num_mc_addrs, short port,
+		     int *interface_index, int hop_limit)
 {
 	struct sockaddr_in6 addr;
 	int fd, index, on = 1;
+	size_t i;
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin6_family = AF_INET6;
@@ -136,16 +129,15 @@ static int open_socket_ipv6(const char *name, struct in6_addr mc_addr[2], short 
 		pr_err("setsockopt IPV6_MULTICAST_HOPS failed: %m");
 		goto no_option;
 	}
-	addr.sin6_addr = mc_addr[0];
-	if (mc_join(fd, index, &addr)) {
-		pr_err("mcast_join failed");
-		goto no_option;
+
+	for (i = 0; i < num_mc_addrs; i++) {
+		addr.sin6_addr = mc_addrs[i];
+		if (mc_join(fd, index, &addr)) {
+			pr_err("mcast_join failed");
+			goto no_option;
+		}
 	}
-	addr.sin6_addr = mc_addr[1];
-	if (mc_join(fd, index, &addr)) {
-		pr_err("mcast_join failed");
-		goto no_option;
-	}
+
 	if (mc_bind(fd, index)) {
 		goto no_option;
 	}
@@ -187,13 +179,13 @@ static int udp6_open(struct transport *t, struct interface *iface,
 		return -1;
 	}
 
-	efd = open_socket_ipv6(name, udp6->mc6_addr, EVENT_PORT, &udp6->index,
-			       hop_limit);
+	efd = udp6_open_socket(name, udp6->mc6_addr, ARRAY_SIZE(udp6->mc6_addr),
+			       EVENT_PORT, &udp6->index, hop_limit);
 	if (efd < 0)
 		goto no_event;
 
-	gfd = open_socket_ipv6(name, udp6->mc6_addr, GENERAL_PORT, &udp6->index,
-			       hop_limit);
+	gfd = udp6_open_socket(name, udp6->mc6_addr, ARRAY_SIZE(udp6->mc6_addr),
+			       GENERAL_PORT, &udp6->index, hop_limit);
 	if (gfd < 0)
 		goto no_general;
 
