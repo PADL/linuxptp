@@ -282,7 +282,11 @@ int sk_get_if_info(const char *name, struct sk_if_info *if_info)
 		goto failed;
 	}
 	/* Megabits per second converted to attoseconds per bit */
-	if_info->iface_bit_period = (1000000000000ULL/if_info->speed);
+	if (if_info->speed)
+		if_info->iface_bit_period = (1000000000000ULL/if_info->speed);
+	else
+		if_info->iface_bit_period = 0;
+
 	return 0;
 failed:
 #endif
