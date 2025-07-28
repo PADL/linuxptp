@@ -610,6 +610,7 @@ int sk_timestamping_init(int fd, const char *device, enum timestamp_type type,
 			filter2 = HWTSTAMP_FILTER_PTP_V2_L4_EVENT;
 			break;
 		case TRANS_IEEE_802_3:
+			filter1 = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
 			filter2 = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
 			break;
 		case TRANS_V1_UDP_IPV4_NP:
