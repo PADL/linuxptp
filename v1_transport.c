@@ -422,6 +422,7 @@ static int v1_transport_open(struct transport *t, struct interface *iface,
 	v1->context.domain_number = config_get_int(t->cfg, NULL, "domainNumber");
 	v1->context.ts = config_get_int(t->cfg, interface_name(iface), "transportSpecific");
 	v1->context.ts <<= 4;
+	v1->context.clock = port_clock(port);
 
 	str = config_get_string(t->cfg, name, "ptpv1_domain_map");
 	if (str) {

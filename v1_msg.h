@@ -53,6 +53,36 @@
 #define PTP_V1_PARENT_STATS			0x20
 #define PTP_V1_SYNC_BURST			0x40
 
+/* Table 25: ManagementMessage enumeration */
+#define PTP_V1_MM_NULL					0
+#define PTP_V1_MM_OBTAIN_IDENTITY			1
+#define PTP_V1_MM_CLOCK_IDENTITY			2
+#define PTP_V1_MM_INITIALIZE_CLOCK			3
+#define PTP_V1_MM_SET_SUBDOMAIN				4
+#define PTP_V1_MM_CLEAR_DESIGNATED_PREFERRED_MASTER	5
+#define PTP_V1_MM_SET_DESIGNATED_PREFERRED_MASTER	6
+#define PTP_V1_MM_GET_DEFAULT_DATA_SET			7
+#define PTP_V1_MM_DEFAULT_DATA_SET			8
+#define PTP_V1_MM_UPDATE_DEFAULT_DATA_SET		9
+#define PTP_V1_MM_GET_CURRENT_DATA_SET			10
+#define PTP_V1_MM_CURRENT_DATA_SET			11
+#define PTP_V1_MM_GET_PARENT_DATA_SET			12
+#define PTP_V1_MM_PARENT_DATA_SET			13
+#define PTP_V1_MM_GET_PORT_DATA_SET			14
+#define PTP_V1_MM_PORT_DATA_SET				15
+#define PTP_V1_MM_GET_GLOBAL_TIME_DATA_SET		16
+#define PTP_V1_MM_GLOBAL_TIME_DATA_SET			17
+#define PTP_V1_MM_UPDATE_GLOBAL_TIME_PROPERTIES		18
+#define PTP_V1_MM_GOTO_FAULTY_STATE			19
+#define PTP_V1_MM_GET_FOREIGN_DATA			20
+#define PTP_V1_MM_FOREIGN_DATA				21
+#define PTP_V1_MM_SET_SYNC_INTERVAL			22
+#define PTP_V1_MM_DISABLE_PORT				23
+#define PTP_V1_MM_ENABLE_PORT				24
+#define PTP_V1_MM_DISABLE_BURST				25
+#define PTP_V1_MM_ENABLE_BURST				26
+#define PTP_V1_MM_SET_TIME				27
+
 struct ptp_v1_domain_map_entry {
 	STAILQ_ENTRY(ptp_v1_domain_map_entry)		entries;
 	UInteger8					domainNumber;
@@ -103,6 +133,8 @@ struct ptp_context_v1 {
 
 	struct ptp_message					last_announce_tx;
 	struct ptp_message					last_announce_rx;
+
+	struct clock						*clock;
 };
 
 struct TimeRepresentation {
@@ -182,6 +214,21 @@ struct delay_resp_msg_v1 {
 	UInteger16			requestingSourceSequenceId;
 } PACKED;
 
+struct management_msg_v1 {
+	struct ptp_header_v1		hdr;
+	Octet				reserved1;
+	Enumeration8			targetCommunicationTechnology;
+	Octet				targetUuid[PTP_V1_UUID_LENGTH];
+	UInteger16			targetPortId;
+	Integer16			startingBoundaryHops;
+	Integer16			boundaryHops;
+	Octet				reserved2;
+	Enumeration8			managementMessageKey;
+	Octet				reserved3[2];
+	UInteger16			parameterLength;
+	Octet				messageParameters[0];
+} PACKED;
+
 struct ptp_message_v1 {
 	union {
 		struct ptp_header_v1		hdr;
@@ -189,12 +236,183 @@ struct ptp_message_v1 {
 		struct sync_delay_req_msg_v1	delay_req;
 		struct follow_up_msg_v1		follow_up;
 		struct delay_resp_msg_v1	delay_resp;
+		struct management_msg_v1	management;
 		struct message_data		data;
 	} PACKED;
 	size_t length; /* length in host byte order */
 };
 
 struct ptp_message;
+
+/*
+ * Management messages that are encoded in messageParameters
+ */
+
+struct clock_identity_v1 {
+	Octet				reserved1[3];
+	UInteger8			clockCommunicationTechnology;
+	Octet				clockUuidField[PTP_V1_UUID_LENGTH];
+	Octet				reserved2[4];
+	UInteger16			clockPort;
+	Octet				manufacturerIdentity[48];
+} PACKED;
+
+struct initialize_clock_v1 {
+	Octet				reserved[2];
+	UInteger16			initializationKey;
+} PACKED;
+
+struct set_subdomain_v1 {
+	Octet				subdomainName[PTP_V1_SUBDOMAIN_NAME_LENGTH];
+} PACKED;
+
+struct default_ds_v1 {
+	Octet				reserved1[3];
+	UInteger8			clockCommunicationTechnology;
+	Octet				clockUuidField[PTP_V1_UUID_LENGTH];
+	Octet				reserved2[4];
+	UInteger16			clockPort;
+	Octet				reserved3[3];
+	UInteger8			clockStratum;
+	Octet				clockIdentifier[PTP_V1_CODE_STRING_LENGTH];
+	Octet				reserved4[2];
+	Integer16			clockVariance;
+	Octet				reserved5[3];
+	UInteger8			clockFollowupCapable;
+	Octet				reserved6[3];
+	UInteger8			preferred;
+	Octet				reserved7[3];
+	UInteger8			initializable;
+	Octet				reserved8[3];
+	UInteger8			externalTiming;
+	Octet				reserved9[3];
+	UInteger8			isBoundaryClock;
+	Octet				reserved10[3];
+	Integer8			syncInterval;
+	Octet				subdomainName[PTP_V1_SUBDOMAIN_NAME_LENGTH];
+	Octet				reserved11[2];
+	UInteger16			numberPorts;
+	Octet				reserved12[2];
+	UInteger16			numberForeignRecords;
+} PACKED;
+
+struct update_default_ds_v1 {
+	Octet				reserved1[3];
+	UInteger8			clockStratum;
+	Octet				clockIdentifier[PTP_V1_CODE_STRING_LENGTH];
+	Octet				reserved2[2];
+	Integer16			clockVariance;
+	Octet				reserved3[3];
+	UInteger8			preferred;
+	Octet				reserved4[3];
+	Integer8			syncInterval;
+	Octet				subdomainName[PTP_V1_SUBDOMAIN_NAME_LENGTH];
+} PACKED;
+
+struct current_ds_v1 {
+	Octet				reserved1[2];
+	UInteger16			stepsRemoved;
+	struct TimeRepresentation	offsetFromMaster;
+	struct TimeRepresentation	oneWayDelay;
+} PACKED;
+
+struct parent_ds_v1 {
+	Octet				reserved1[3];
+	Enumeration8			parentCommunicationTechnology;
+	Octet				parentUuid[PTP_V1_UUID_LENGTH];
+	Octet				reserved2[4];
+	UInteger16			parentPortId;
+	Octet				reserved3[2];
+	UInteger16			parentLastSyncSequenceNumber;
+	Octet				reserved4[3];
+	UInteger8			parentFollowupCapable;
+	Octet				reserved5[3];
+	UInteger8			parentExternalTiming;
+	Octet				reserved6[2];
+	Integer16			parentVariance;
+	Octet				reserved7[3];
+	UInteger8			parentStats;
+	Octet				reserved8[2];
+	Integer16			observedVariance;
+	Integer32			observedDrift;
+	Octet				reserved9[3];
+	UInteger8			utcReasonable;
+	UInteger8			reserved10[3];
+	Enumeration8			grandmasterCommunicationTechnology;
+	Octet				grandmasterUuid[PTP_V1_UUID_LENGTH];
+	Octet				reserved11[4];
+	UInteger16			grandmasterPortId;
+	Octet				reserved12[3];
+	UInteger8			grandmasterStratum;
+	Octet				grandmasterIdentifier[PTP_V1_CODE_STRING_LENGTH];
+	Octet				reserved13[2];
+	Integer16			grandmasterVariance;
+	Octet				reserved14[3];
+	UInteger8			grandmasterPreferred;
+	Octet				reserved15[3];
+	UInteger8			grandmasterIsBoundaryClock;
+	Octet				reserved16[2];
+	UInteger16			grandmasterSequenceNumber;
+} PACKED;
+
+struct port_ds_v1 {
+	Octet				reserved1[2];
+	UInteger16			returnedPortNumber;
+	Octet				reserved2[3];
+	UInteger8			portState;
+	Octet				reserved3[2];
+	UInteger16			lastSyncEventSequenceNumber;
+	Octet				reserved4[2];
+	UInteger16			lastGeneralEventSequenceNumber;
+	Octet				reserved5[3];
+	Enumeration8			portCommunicationTechnology;
+	Octet				portUuid[PTP_V1_UUID_LENGTH];
+	Octet				reserved6[4];
+	UInteger16			portId;
+	Octet				reserved7[3];
+	UInteger8			burstEnabled;
+	Octet				reserved8;
+	UInteger8			subdomainAddressOctets;
+	UInteger8			eventPortAddressOctets;
+	UInteger8			generalPortAddressOctets;
+	Octet				subdomainAddress[4];
+	Octet				reserved9[2];
+	UInteger16			eventPortAddress;
+	Octet				reserved10[2];
+	UInteger16			generalPortAddress;
+} PACKED;
+
+struct global_time_properties_v1 {
+	struct TimeRepresentation	localTime;
+	Octet				reserved1[2];
+	Integer16			currentUtcOffset;
+	Octet				reserved2[3];
+	UInteger8			leap59;
+	Octet				reserved3[3];
+	UInteger8			leap61;
+	Octet				reserved4[2];
+	UInteger16			epochNumber;
+} PACKED;
+
+struct update_global_time_properties_v1 {
+	Octet				reserved1[2];
+	Integer16			currentUtcOffset;
+	Octet				reserved2[3];
+	UInteger8			leap59;
+	Octet				reserved3[3];
+	UInteger8			leap61;
+	Octet				reserved4[2];
+	UInteger16			epochNumber;
+} PACKED;
+
+struct set_sync_interval_v1 {
+	Octet				reserved[2];
+	Integer16			syncInterval;
+} PACKED;
+
+struct set_time_v1 {
+	struct TimeRepresentation	localTime;
+} PACKED;
 
 /*
  * Translate a PTPv2 message to a PTPv1 message per Clause 18 of
