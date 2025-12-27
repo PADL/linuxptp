@@ -317,6 +317,8 @@ struct config_item config_tab[] = {
 	GLOB_ITEM_STR("message_tag", NULL),
 	GLOB_ITEM_STR("manufacturerIdentity", "00:00:00"),
 	GLOB_ITEM_INT("max_frequency", 900000000, 0, INT_MAX),
+	GLOB_ITEM_INT("max_offset_locked", 20000, 0, INT_MAX),
+	GLOB_ITEM_INT("max_offset_locked_skip", 2, 0, INT_MAX),
 	PORT_ITEM_INT("min_neighbor_prop_delay", -20000000, INT_MIN, -1),
 	PORT_ITEM_INT("msg_interval_request", 0, 0, 1),
 	PORT_ITEM_INT("neighborPropDelayThresh", 20000000, 0, INT_MAX),
