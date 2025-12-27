@@ -125,6 +125,9 @@ struct clock {
 	int utc_offset;
 	int time_flags;  /* grand master role */
 	int time_source; /* grand master role */
+	int max_offset_locked;      /* largest tolerable offset in a locked state */
+	int max_offset_locked_skip; /* number of offsets to skip before accepting */
+	int offset_skipped;         /* large offsets skipped */
 	UInteger8 clock_class_threshold;
 	UInteger8 max_steps_removed;
 	enum servo_state servo_state;
@@ -1336,6 +1339,8 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	c->utc_offset = config_get_int(config, NULL, "utc_offset");
 	c->time_source = config_get_int(config, NULL, "timeSource");
 	c->step_window = config_get_int(config, NULL, "step_window");
+	c->max_offset_locked = config_get_int(config, NULL, "max_offset_locked");
+	c->max_offset_locked_skip = config_get_int(config, NULL, "max_offset_locked_skip");
 
 	if (c->free_running) {
 		c->clkid = CLOCK_INVALID;
@@ -2092,6 +2097,19 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 		}
 	}
 
+	offset = tmv_to_nanoseconds(c->master_offset);
+	if (c->max_offset_locked_skip != 0 && c->servo_state == SERVO_LOCKED &&
+		llabs(offset) > c->max_offset_locked) {
+		if (c->offset_skipped < c->max_offset_locked_skip) {
+			c->offset_skipped++;
+			pr_debug("skip %d/%d large offset (>%d) %ld", c->offset_skipped,
+					c->max_offset_locked_skip, c->max_offset_locked, offset);
+			return state;
+		}
+	} else {
+		c->offset_skipped = 0;
+	}
+
 	if (clock_utc_correct(c, ingress)) {
 		return c->servo_state;
 	}
@@ -2104,7 +2122,6 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 		return state;
 	}
 
-	offset = tmv_to_nanoseconds(c->master_offset);
 	adj = servo_sample(c->servo, offset, tmv_to_nanoseconds(ingress),
 			   weight, &state);
 	c->servo_state = state;
