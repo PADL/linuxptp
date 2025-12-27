@@ -1002,6 +1002,16 @@ be specified for each port to indicate which Security Association from
 the \fBsa_file\fR should be used. The default is an empty string.
 
 .TP
+.B max_offset_locked
+Largest tolerable offset in a locked state.
+If offset is over this limit outlier will be skipped max_offset_locked_skip
+times.
+The default is 0 (disabled).
+.TP
+.B max_offset_locked_skip
+Number of offsets exceeding max_offset_locked to skip before accepting.
+The default is 0 (disabled).
+.TP
 .B sanity_freq_limit
 The maximum allowed frequency offset between uncorrected clock and the system
 monotonic clock in parts per billion (ppb). This is used as a sanity check of
