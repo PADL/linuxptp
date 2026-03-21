@@ -3345,6 +3345,35 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	if (dup) {
 		msg_put(dup);
 	}
+
+	/*
+	 * Drain any pending synthetic message queued by the transport
+	 * (e.g. a PTPv1 SYNC produces both a SYNC and a synthetic ANNOUNCE).
+	 */
+	if (transport_pending(p->trp)) {
+		msg = msg_allocate();
+		if (!msg)
+			return event == EV_NONE ? EV_FAULT_DETECTED : event;
+
+		msg->hwts.type = p->timestamping;
+
+		cnt = transport_recv_pending(p->trp, msg);
+		if (cnt < 0) {
+			msg_put(msg);
+			return event;
+		}
+		err = msg_post_recv(msg, cnt);
+		if (err) {
+			msg_put(msg);
+			return event;
+		}
+		if (msg_type(msg) == ANNOUNCE) {
+			if (process_announce(p, msg))
+				event = EV_STATE_DECISION_EVENT;
+		}
+		msg_put(msg);
+	}
+
 	return event;
 }
 

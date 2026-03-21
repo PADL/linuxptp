@@ -43,6 +43,20 @@ int transport_recv(struct transport *t, int fd, struct ptp_message *msg)
 	return t->recv(t, fd, msg, sizeof(msg->data), &msg->address, &msg->hwts);
 }
 
+int transport_pending(struct transport *t)
+{
+	return t->pending_msg;
+}
+
+int transport_recv_pending(struct transport *t, struct ptp_message *msg)
+{
+	if (!t->pending_msg)
+		return -ENOENT;
+
+	t->pending_msg = 0;
+	return t->recv(t, -1, msg, sizeof(msg->data), &msg->address, &msg->hwts);
+}
+
 int transport_send(struct transport *t, struct fdarray *fda,
 		   enum transport_event event, struct ptp_message *msg)
 {

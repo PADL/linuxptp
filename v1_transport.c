@@ -28,7 +28,6 @@
 
 __attribute__((weak)) struct clock *port_clock(struct port *p);
 __attribute__((weak)) void port_set_version(struct port *p, UInteger8 versionNumber);
-__attribute__((weak)) enum fsm_event port_event(struct port *port, int fd_index);
 
 static void free_map_entries(void *arg);
 
@@ -39,7 +38,6 @@ struct v1_transport {
 	struct address mac;
 	struct address mcast;
 	struct ptp_context_v1 context;
-	const struct ptp_message_v1 *last_v1_sync;
 };
 
 /* IPv4 multicast: 224.0.1.129...132 */
@@ -62,7 +60,7 @@ static struct in6_addr ipv6_mcast_addr[MC_ADDR_COUNT] = {
 static inline bool v1_is_ptp_transport_p(const struct v1_transport *v1)
 {
 	return v1->t.context != NULL && port_clock != NULL &&
-		port_set_version != NULL && port_event != NULL;
+		port_set_version != NULL;
 }
 
 static inline sa_family_t v1_transport_family(const struct v1_transport *v1)
@@ -540,7 +538,6 @@ static int v1_transport_recv(struct transport *t, int fd, void *buf, int buflen,
 {
 	const struct ptp_header *v2_hdr = &((struct ptp_message *)buf)->header;
 	struct v1_transport *v1 = container_of(t, struct v1_transport, t);
-	const struct ptp_message_v1 *v1_msg;
 	struct ptp_message_v1 v1_msg_buf;
 	int ret;
 
@@ -552,31 +549,31 @@ static int v1_transport_recv(struct transport *t, int fd, void *buf, int buflen,
 	if (buflen < sizeof(struct message_data))
 		return -ERANGE;
 
-	if (v1->last_v1_sync) {
-		v1_msg = v1->last_v1_sync;
-	} else {
-		ret = sk_receive(fd, v1_msg_buf.data.buffer,
-				 sizeof(v1_msg_buf.data.buffer),
-				 addr, hwts, MSG_DONTWAIT);
-		if (ret < 0)
-			return ret;
-
-		v1_msg_buf.length = (size_t)ret;
-		v1_msg = &v1_msg_buf;
+	if (fd == -1) {
+		/*
+		 * Called from transport_recv_pending() to drain the
+		 * synthetic ANNOUNCE that was queued after a PTPv1 SYNC.
+		 */
+		if (buflen > sizeof(v1->context.last_announce_rx.data.buffer))
+			return -EMSGSIZE;
+		memcpy(buf, &v1->context.last_announce_rx.data.buffer, buflen);
+		return ntohs(v2_hdr->messageLength);
 	}
 
-	ret = v1_message_to_v2(&v1->context, v1_msg, buf);
+	ret = sk_receive(fd, v1_msg_buf.data.buffer,
+			 sizeof(v1_msg_buf.data.buffer),
+			 addr, hwts, MSG_DONTWAIT);
+	if (ret < 0)
+		return ret;
+
+	v1_msg_buf.length = (size_t)ret;
+
+	ret = v1_message_to_v2(&v1->context, &v1_msg_buf, buf);
 	if (ret < 0) {
 		if (ret != -EPROTO)
 			pr_warning("failed to translate PTPv1 message to PTPv2: %s",
 				   strerror(-ret));
 		return ret;
-	}
-
-	if (v1->last_v1_sync) {
-		if (buflen > sizeof(v1->context.last_announce_rx.data.buffer))
-			return -EMSGSIZE;
-		memcpy(&v1->context.last_announce_rx.data.buffer, buf, buflen);
 	}
 
 	if (msg_type(buf) == SYNC) {
@@ -585,14 +582,18 @@ static int v1_transport_recv(struct transport *t, int fd, void *buf, int buflen,
 		/* store epoch as PTPv1 Follow_Up does not include it */
 		v1->context.epoch_number_rx = v2_sync->originTimestamp.seconds_msb;
 
+		/*
+		 * PTPv1 SYNC carries announce data; translate the same
+		 * v1 message again as an ANNOUNCE and stash it for the
+		 * port layer to pick up via transport_recv_pending().
+		 */
 		v1->context.flags |= PTP_V1_CONTEXT_FLAG_SYNC_AS_ANNO;
-		v1->last_v1_sync = v1_msg;
-
-		/* reentrantly inject ANNOUNCE into state machine before returning SYNC */
-		port_event(t->context, FD_GENERAL);
-
-		v1->last_v1_sync = NULL;
+		ret = v1_message_to_v2(&v1->context, &v1_msg_buf,
+				       (struct ptp_message *)&v1->context.last_announce_rx);
 		v1->context.flags &= ~(PTP_V1_CONTEXT_FLAG_SYNC_AS_ANNO);
+
+		if (ret >= 0)
+			t->pending_msg = 1;
 	}
 
 	return ntohs(v2_hdr->messageLength);
