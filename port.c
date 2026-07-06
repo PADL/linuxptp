@@ -2719,6 +2719,7 @@ calc:
 	msg_put(p->peer_delay_req);
 	p->peer_delay_req = NULL;
 
+	port_capable(p);
 	port_notify_event(p, NOTIFY_CMLDS);
 }
 
