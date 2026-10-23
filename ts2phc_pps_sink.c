@@ -419,8 +419,15 @@ static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
 		watched++;
 		silent = (now.tv_sec - sink->last_event.tv_sec) * NS_PER_SEC +
 			 (now.tv_nsec - sink->last_event.tv_nsec);
-		if (silent < limit)
+		if (silent < limit) {
+			/*
+			 * A sink re-armed in an earlier pass and still without
+			 * an event is as silent as one crossing the limit now.
+			 */
+			if (sink->stale)
+				silenced++;
 			continue;
+		}
 		silenced++;
 
 		if (!sink->stale) {
