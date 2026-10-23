@@ -21,39 +21,24 @@ struct ts2phc_phc_pps_source {
 	struct ts2phc_pps_source pps_source;
 	struct ts2phc_clock *clock;
 	int channel;
+	struct config *cfg;
+	char *dev;
 };
 
-static int ts2phc_phc_pps_source_activate(struct config *cfg, const char *dev,
-					  struct ts2phc_phc_pps_source *s)
+/*
+ * Program the periodic output, starting from the PHC's current time (a
+ * start time in the past, or far in the future after the PHC was stepped,
+ * leaves the output silent).
+ */
+static int ts2phc_phc_pps_source_perout(struct ts2phc_phc_pps_source *s)
 {
 	int32_t perout_phase, pulserate, pulsewidth;
 	struct ptp_perout_request perout_request;
-	struct ptp_pin_desc desc;
-	const char *pin_name;
+	struct config *cfg = s->cfg;
+	const char *dev = s->dev;
 	struct timespec ts;
 	int err;
 
-	memset(&desc, 0, sizeof(desc));
-
-	s->channel = config_get_int(cfg, dev, "ts2phc.channel");
-
-	pin_name = config_get_string(cfg, dev, "ts2phc.pin_name");
-	if (pin_name[0]) {
-		desc.index = phc_get_pin_index(s->clock->clkid, pin_name);
-		if (desc.index < 0)
-			return -1;
-	} else {
-		desc.index = config_get_int(cfg, dev, "ts2phc.pin_index");
-	}
-	desc.func = PTP_PF_PEROUT;
-	desc.chan = s->channel;
-
-	pr_debug("PPS source %s is using pin %d",
-		 dev, desc.index);
-
-	if (phc_pin_setfunc(s->clock->clkid, &desc)) {
-		pr_warning("Failed to set the pin. Continuing bravely on...");
-	}
 	if (clock_gettime(s->clock->clkid, &ts)) {
 		perror("clock_gettime");
 		return -1;
@@ -110,6 +95,37 @@ static int ts2phc_phc_pps_source_activate(struct config *cfg, const char *dev,
 	return 0;
 }
 
+static int ts2phc_phc_pps_source_activate(struct config *cfg, const char *dev,
+					  struct ts2phc_phc_pps_source *s)
+{
+	struct ptp_pin_desc desc;
+	const char *pin_name;
+
+	memset(&desc, 0, sizeof(desc));
+
+	s->channel = config_get_int(cfg, dev, "ts2phc.channel");
+
+	pin_name = config_get_string(cfg, dev, "ts2phc.pin_name");
+	if (pin_name[0]) {
+		desc.index = phc_get_pin_index(s->clock->clkid, pin_name);
+		if (desc.index < 0)
+			return -1;
+	} else {
+		desc.index = config_get_int(cfg, dev, "ts2phc.pin_index");
+	}
+	desc.func = PTP_PF_PEROUT;
+	desc.chan = s->channel;
+
+	pr_debug("PPS source %s is using pin %d",
+		 dev, desc.index);
+
+	if (phc_pin_setfunc(s->clock->clkid, &desc)) {
+		pr_warning("Failed to set the pin. Continuing bravely on...");
+	}
+
+	return ts2phc_phc_pps_source_perout(s);
+}
+
 static void ts2phc_phc_pps_source_destroy(struct ts2phc_pps_source *src)
 {
 	struct ts2phc_phc_pps_source *m =
@@ -122,7 +138,18 @@ static void ts2phc_phc_pps_source_destroy(struct ts2phc_pps_source *src)
 		pr_err(PTP_PEROUT_REQUEST_FAILED);
 	}
 	ts2phc_clock_destroy(m->clock);
+	free(m->dev);
 	free(m);
+}
+
+static int ts2phc_phc_pps_source_rearm(struct ts2phc_pps_source *src)
+{
+	struct ts2phc_phc_pps_source *s =
+		container_of(src, struct ts2phc_phc_pps_source, pps_source);
+
+	pr_warning("PPS source %s: re-programming the periodic output on channel %d",
+		   s->dev, s->channel);
+	return ts2phc_phc_pps_source_perout(s);
 }
 
 static int ts2phc_phc_pps_source_getppstime(struct ts2phc_pps_source *src,
@@ -153,9 +180,17 @@ struct ts2phc_pps_source *ts2phc_phc_pps_source_create(struct ts2phc_private *pr
 	s->pps_source.destroy = ts2phc_phc_pps_source_destroy;
 	s->pps_source.getppstime = ts2phc_phc_pps_source_getppstime;
 	s->pps_source.get_clock = ts2phc_phc_pps_source_get_clock;
+	s->pps_source.rearm = ts2phc_phc_pps_source_rearm;
+	s->cfg = priv->cfg;
+	s->dev = strdup(dev);
+	if (!s->dev) {
+		free(s);
+		return NULL;
+	}
 
 	s->clock = ts2phc_clock_add(priv, dev);
 	if (!s->clock) {
+		free(s->dev);
 		free(s);
 		return NULL;
 	}

@@ -391,10 +391,16 @@ int ts2phc_pps_sink_arm(struct ts2phc_private *priv)
 	return 0;
 }
 
-/* Disable and re-enable the EXTTS channel of every sink silent too long. */
+/*
+ * Disable and re-enable the EXTTS channel of every sink silent too long.
+ * When every sink is, the source is the likelier culprit (a PHC stepped
+ * after its periodic output was programmed fires no more), so re-program
+ * the source's output too.
+ */
 static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
 {
 	int64_t limit = (int64_t)SINK_STALE_PERIODS * priv->pulse_period;
+	unsigned int watched = 0, silenced = 0;
 	struct ptp_extts_request extts;
 	struct ts2phc_pps_sink *sink;
 	struct timespec now;
@@ -410,10 +416,12 @@ static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
 		if (priv->external_pps && !sink->clock->is_target)
 			continue;
 
+		watched++;
 		silent = (now.tv_sec - sink->last_event.tv_sec) * NS_PER_SEC +
 			 (now.tv_nsec - sink->last_event.tv_nsec);
 		if (silent < limit)
 			continue;
+		silenced++;
 
 		if (!sink->stale) {
 			pr_warning("%s: no extts event for %" PRId64
@@ -444,6 +452,10 @@ static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
 		/* Wait another full interval before trying again. */
 		sink->last_event = now;
 	}
+
+	if (watched && silenced == watched &&
+	    ts2phc_pps_source_rearm(priv->src))
+		pr_err("failed to re-program the PPS source");
 }
 
 int ts2phc_pps_sinks_init(struct ts2phc_private *priv)

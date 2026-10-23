@@ -49,6 +49,14 @@ struct ts2phc_clock *ts2phc_pps_source_get_clock(struct ts2phc_pps_source *src)
 	return NULL;
 }
 
+int ts2phc_pps_source_rearm(struct ts2phc_pps_source *src)
+{
+	if (src->rearm)
+		return src->rearm(src);
+
+	return 0;
+}
+
 enum ts2phc_pps_source_type ts2phc_pps_source_get_type(struct ts2phc_pps_source *src)
 {
 	return src->type;

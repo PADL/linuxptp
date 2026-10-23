@@ -54,6 +54,15 @@ int ts2phc_pps_source_getppstime(struct ts2phc_pps_source *src, struct timespec 
 struct ts2phc_clock *ts2phc_pps_source_get_clock(struct ts2phc_pps_source *src);
 
 /**
+ * Re-program the source's pulse output from its current time, for when
+ * the sinks have gone silent (e.g. the source PHC was stepped after its
+ * periodic output was programmed). A no-op for a source without one.
+ * @param src    Pointer to a source obtained via @ref ts2phc_pps_source_create().
+ * @return       Zero on success or when there is nothing to do, non-zero otherwise.
+ */
+int ts2phc_pps_source_rearm(struct ts2phc_pps_source *src);
+
+/**
  * Returns the type of the PPS source
  * @param src    Pointer to a source obtained via @ref ts2phc_pps_source_create().
  * @return       The type of the clock.
