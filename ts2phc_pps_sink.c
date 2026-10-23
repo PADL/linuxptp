@@ -32,7 +32,17 @@ struct ts2phc_pps_sink {
 	tmv_t correction;
 	uint32_t pulsewidth;
 	struct ts2phc_clock *clock;
+	struct timespec last_event;	/* CLOCK_MONOTONIC, or when armed */
+	bool stale;			/* re-armed since the last event */
 };
+
+/*
+ * A sink that sees no event for this many pulse periods is re-armed:
+ * a NIC reset (e.g. igb toggling Qav mode for a cbs offload) clears the
+ * pin and EXTTS configuration in hardware while the PTP core still
+ * reports the channel as enabled, and no event ever arrives again.
+ */
+#define SINK_STALE_PERIODS 5
 
 struct ts2phc_sink_array {
 	struct ts2phc_pps_sink **sink;
@@ -302,6 +312,12 @@ static enum extts_result ts2phc_pps_sink_event(struct ts2phc_private *priv,
 		goto out;
 	}
 
+	clock_gettime(CLOCK_MONOTONIC, &sink->last_event);
+	if (sink->stale) {
+		pr_info("%s: extts events resumed", sink->name);
+		sink->stale = false;
+	}
+
 	if (sink->polarity == (PTP_RISING_EDGE | PTP_FALLING_EDGE)) {
 		err = ts2phc_pps_source_getppstime(priv->src, &source_ts);
 		if (err < 0) {
@@ -370,8 +386,56 @@ int ts2phc_pps_sink_arm(struct ts2phc_private *priv)
 			pr_err(PTP_EXTTS_REQUEST_FAILED);
 			return -1;
 		}
+		clock_gettime(CLOCK_MONOTONIC, &sink->last_event);
 	}
 	return 0;
+}
+
+/* Disable and re-enable the EXTTS channel of every sink silent too long. */
+static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
+{
+	int64_t limit = (int64_t)SINK_STALE_PERIODS * priv->pulse_period;
+	struct ptp_extts_request extts;
+	struct ts2phc_pps_sink *sink;
+	struct timespec now;
+	int64_t silent;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	STAILQ_FOREACH(sink, &priv->sinks, list) {
+		silent = (now.tv_sec - sink->last_event.tv_sec) * NS_PER_SEC +
+			 (now.tv_nsec - sink->last_event.tv_nsec);
+		if (silent < limit)
+			continue;
+
+		if (!sink->stale) {
+			pr_warning("%s: no extts event for %" PRId64
+				   " ms, re-arming channel %u",
+				   sink->name, silent / 1000000,
+				   sink->pin_desc.chan);
+			/*
+			 * Whatever silenced the channel may also have stepped
+			 * the PHC (igb rewrites it to CLOCK_REALTIME on
+			 * reset): unlock the servo so it may step again.
+			 */
+			if (sink->clock->servo)
+				servo_reset(sink->clock->servo);
+			sink->clock->servo_state = SERVO_UNLOCKED;
+		}
+		sink->stale = true;
+
+		memset(&extts, 0, sizeof(extts));
+		extts.index = sink->pin_desc.chan;
+		extts.flags = 0;
+		if (ioctl(sink->clock->fd, PTP_EXTTS_REQUEST2, &extts))
+			pr_err(PTP_EXTTS_REQUEST_FAILED);
+		extts.flags = sink->polarity | PTP_ENABLE_FEATURE;
+		if (ioctl(sink->clock->fd, PTP_EXTTS_REQUEST2, &extts))
+			pr_err(PTP_EXTTS_REQUEST_FAILED);
+
+		/* Wait another full interval before trying again. */
+		sink->last_event = now;
+	}
 }
 
 int ts2phc_pps_sinks_init(struct ts2phc_private *priv)
@@ -409,6 +473,8 @@ int ts2phc_pps_sink_poll(struct ts2phc_private *priv)
 
 	for (i = 0; i < priv->n_sinks; i++)
 		polling_array->collected_events[i] = 0;
+
+	ts2phc_pps_sink_rearm_stale(priv);
 
 	while (!all_sinks_have_events) {
 		struct ts2phc_pps_sink *sink;
