@@ -159,6 +159,18 @@ void servo_reset(struct servo *servo)
 	servo->reset(servo);
 }
 
+void servo_rearm_first_step(struct servo *servo)
+{
+	servo->reset(servo);
+	servo->curr_offset_values = servo->num_offset_values;
+	servo->first_update = 1;
+}
+
+double servo_first_step_threshold(struct servo *servo)
+{
+	return servo->first_step_threshold;
+}
+
 double servo_rate_ratio(struct servo *servo)
 {
 	if (servo->rate_ratio)

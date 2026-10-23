@@ -403,6 +403,13 @@ static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
 	STAILQ_FOREACH(sink, &priv->sinks, list) {
+		/*
+		 * With an external PPS source a sink whose clock is not a
+		 * target (one ptp4l disciplines) is none of our business.
+		 */
+		if (priv->external_pps && !sink->clock->is_target)
+			continue;
+
 		silent = (now.tv_sec - sink->last_event.tv_sec) * NS_PER_SEC +
 			 (now.tv_nsec - sink->last_event.tv_nsec);
 		if (silent < limit)
@@ -416,11 +423,12 @@ static void ts2phc_pps_sink_rearm_stale(struct ts2phc_private *priv)
 			/*
 			 * Whatever silenced the channel may also have stepped
 			 * the PHC (igb rewrites it to CLOCK_REALTIME on
-			 * reset): unlock the servo so it may step again.
+			 * reset): restart the servo so its next lock steps.
 			 */
-			if (sink->clock->servo)
-				servo_reset(sink->clock->servo);
-			sink->clock->servo_state = SERVO_UNLOCKED;
+			if (sink->clock->is_target && sink->clock->servo) {
+				servo_rearm_first_step(sink->clock->servo);
+				sink->clock->servo_state = SERVO_UNLOCKED;
+			}
 		}
 		sink->stale = true;
 

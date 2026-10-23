@@ -32,6 +32,7 @@ struct ts2phc_clock {
 	bool is_target;
 	bool is_ts_available;
 	tmv_t last_ts;
+	int large_offsets;	/* consecutive locked samples past first_step_threshold */
 };
 
 struct ts2phc_port {

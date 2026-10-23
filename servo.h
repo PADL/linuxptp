@@ -116,6 +116,22 @@ void servo_sync_interval(struct servo *servo, double interval);
 void servo_reset(struct servo *servo);
 
 /**
+ * Reset a clock servo as if it had just been created, so that its next
+ * lock steps the clock when the offset exceeds first_step_threshold
+ * (servo_reset() keeps first_update cleared once the servo has locked,
+ * and with step_threshold 0 it would then only ever slew).
+ * @param servo   Pointer to a servo obtained via @ref servo_create().
+ */
+void servo_rearm_first_step(struct servo *servo);
+
+/**
+ * Get the first step threshold.
+ * @param servo   Pointer to a servo obtained via @ref servo_create().
+ * @return   first_step_threshold in nanoseconds, 0 when stepping is disabled.
+ */
+double servo_first_step_threshold(struct servo *servo);
+
+/**
  * Obtain ratio between master's frequency and current servo frequency.
  * @param servo   Pointer to a servo obtained via @ref servo_create().
  * @return   The rate ratio, 1.0 is returned when not known.

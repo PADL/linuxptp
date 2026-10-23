@@ -457,6 +457,42 @@ static int ts2phc_pps_source_implicit_tstamp(struct ts2phc_private *priv,
 	return 0;
 }
 
+/*
+ * A locked clock whose offset stays beyond first_step_threshold for this
+ * many samples has been stepped under us (e.g. an igb reset rewrites its
+ * PHC from CLOCK_REALTIME, and with the pin restored the events resume
+ * at once, with no silent spell to notice).
+ */
+#define LARGE_OFFSET_SAMPLES 3
+
+/*
+ * Whether @offset is such a step: the sample is withheld from the servo
+ * and, on the last of LARGE_OFFSET_SAMPLES, the servo restarts so that
+ * its next lock steps the clock (one wild sample only costs a skip).
+ */
+static bool ts2phc_clock_stepped(struct ts2phc_clock *c, int64_t offset)
+{
+	double threshold = servo_first_step_threshold(c->servo);
+
+	if (threshold <= 0.0 || llabs(offset) <= threshold ||
+	    (c->servo_state != SERVO_LOCKED &&
+	     c->servo_state != SERVO_LOCKED_STABLE)) {
+		c->large_offsets = 0;
+		return false;
+	}
+	if (++c->large_offsets < LARGE_OFFSET_SAMPLES) {
+		pr_info("%s offset %10" PRId64 " beyond first_step_threshold, skipped",
+			c->name, offset);
+		return true;
+	}
+	pr_warning("%s offset %10" PRId64 " beyond first_step_threshold for %d samples: restarting the servo to step",
+		   c->name, offset, LARGE_OFFSET_SAMPLES);
+	servo_rearm_first_step(c->servo);
+	c->servo_state = SERVO_UNLOCKED;
+	c->large_offsets = 0;
+	return true;
+}
+
 static void ts2phc_synchronize_clocks(struct ts2phc_private *priv, int autocfg)
 {
 	struct timespec source_ts, now;
@@ -523,6 +559,9 @@ static void ts2phc_synchronize_clocks(struct ts2phc_private *priv, int autocfg)
 				offset);
 			continue;
 		}
+
+		if (!holdover && ts2phc_clock_stepped(c, offset))
+			continue;
 
 		adj = servo_sample(c->servo, offset, tmv_to_nanoseconds(ts),
 				   SAMPLE_WEIGHT, &c->servo_state);
