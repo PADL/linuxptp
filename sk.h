@@ -147,6 +147,15 @@ int sk_get_error(int fd);
 int sk_set_priority(int fd, int family, uint8_t dscp);
 
 /**
+ * Set the socket priority (SO_PRIORITY), after any DSCP: on IPv4 setting
+ * IP_TOS resets it.
+ * @param fd       An open socket.
+ * @param priority The desired priority, 1 to 15; zero leaves it alone.
+ * @return Zero on success, negative on failure
+ */
+int sk_set_socket_priority(int fd, int priority);
+
+/**
  * Enable time stamping on a given network interface.
  * @param fd          An open socket.
  * @param device      The name of the network interface to configure.

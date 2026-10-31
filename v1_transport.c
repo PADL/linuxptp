@@ -395,7 +395,7 @@ static int v1_transport_open(struct transport *t, struct interface *iface,
 	struct v1_transport *v1 = container_of(t, struct v1_transport, t);
 	const char *name = interface_name(iface);
 	uint8_t event_dscp, general_dscp;
-	int efd, gfd, ttl, handle;
+	int efd, gfd, priority, ttl, handle;
 	const char *str;
 
 	v1->context.domain_number = config_get_int(t->cfg, NULL, "domainNumber");
@@ -490,6 +490,11 @@ static int v1_transport_open(struct transport *t, struct interface *iface,
 		pr_warning("Failed to set PTPv1 event DSCP priority.");
 	if (general_dscp && sk_set_priority(gfd, family, general_dscp))
 		pr_warning("Failed to set PTPv1 general DSCP priority.");
+
+	priority = config_get_int(t->cfg, NULL, "socket_priority");
+	if (sk_set_socket_priority(efd, priority) ||
+	    sk_set_socket_priority(gfd, priority))
+		pr_warning("Failed to set the PTPv1 socket priority.");
 
 	fda->fd[FD_EVENT] = efd;
 	fda->fd[FD_GENERAL] = gfd;

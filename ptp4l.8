@@ -1088,9 +1088,9 @@ Use "clientOnly" instead.
 .B socket_priority
 Configure the SO_PRIORITY of sockets. This is to support cases where a user
 wants to route ptp4l traffic using Linux qdiscs for the purpose of traffic
-shaping. This option is only available with the IEEE 802.3 transport (the
-\fB-2\fP option) and is silently ignored when using the UDP IPv4/6 network
-transports. Must be in the range of 0 to 15, inclusive. The default is 0.
+shaping. With the UDP IPv4/6 and PTPv1 transports it is set after the DSCP;
+on IPv4 the DSCP (IP_TOS) would otherwise choose the priority. Must be in the
+range of 0 to 15, inclusive. The default is 0 (left alone).
 
 .TP
 .B step_threshold

@@ -169,7 +169,7 @@ static int udp6_open(struct transport *t, struct interface *iface,
 	struct udp6 *udp6 = container_of(t, struct udp6, t);
 	const char *name = interface_name(iface);
 	uint8_t event_dscp, general_dscp;
-	int efd, gfd, hop_limit;
+	int efd, gfd, hop_limit, priority;
 	char *str;
 
 	hop_limit = config_get_int(t->cfg, name, "udp_ttl");
@@ -214,6 +214,12 @@ static int udp6_open(struct transport *t, struct interface *iface,
 	}
 	if (general_dscp && sk_set_priority(gfd, AF_INET6, general_dscp)) {
 		pr_warning("Failed to set general DSCP priority.");
+	}
+
+	priority = config_get_int(t->cfg, NULL, "socket_priority");
+	if (sk_set_socket_priority(efd, priority) ||
+	    sk_set_socket_priority(gfd, priority)) {
+		pr_warning("Failed to set the socket priority.");
 	}
 
 	fda->fd[FD_EVENT] = efd;

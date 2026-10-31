@@ -563,6 +563,19 @@ int sk_set_priority(int fd, int family, uint8_t dscp)
 	return 0;
 }
 
+int sk_set_socket_priority(int fd, int priority)
+{
+	if (priority <= 0) {
+		return 0;
+	}
+	if (setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &priority,
+		       sizeof(priority)) < 0) {
+		pr_err("setsockopt SO_PRIORITY failed: %m");
+		return -1;
+	}
+	return 0;
+}
+
 int sk_timestamping_init(int fd, const char *device, enum timestamp_type type,
 			 enum transport_type transport, int vclock)
 {
