@@ -264,7 +264,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_INT("boundary_clock_jbod", 0, 0, 1),
 	PORT_ITEM_ENU("BMCA", BMCA_PTP, bmca_enu),
 	GLOB_ITEM_INT("check_fup_sync", 0, 0, 1),
-	GLOB_ITEM_INT("clientOnly", 0, 0, 1),
+	PORT_ITEM_INT("clientOnly", 0, 0, 1),
 	GLOB_ITEM_INT("clockAccuracy", 0xfe, 0, UINT8_MAX),
 	GLOB_ITEM_INT("clockClass", 248, 0, UINT8_MAX),
 	GLOB_ITEM_STR("clockIdentity", "000000.0000.000000"),
@@ -372,7 +372,7 @@ struct config_item config_tab[] = {
 	GLOB_ITEM_INT("servo_num_offset_values", 10, 0, INT_MAX),
 	GLOB_ITEM_INT("servo_offset_threshold", 0, 0, INT_MAX),
 	GLOB_ITEM_STR("slave_event_monitor", ""),
-	GLOB_ITEM_INT("slaveOnly", 0, 0, 1), /*deprecated*/
+	PORT_ITEM_INT("slaveOnly", 0, 0, 1), /*deprecated*/
 	GLOB_ITEM_INT("socket_priority", 0, 0, 15),
 	PORT_ITEM_INT("spp", -1, -1, UINT8_MAX),
 	GLOB_ITEM_DBL("step_threshold", 0.0, 0.0, DBL_MAX),

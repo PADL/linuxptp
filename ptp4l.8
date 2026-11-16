@@ -674,8 +674,8 @@ instead of running the best master clock algorithm (BMCA) described in
 and clients when you know the roles of the devices in advance.  When set to
 \'noop', the traditional BMCA algorithm used by 1588 is skipped. masterOnly and
 clientOnly will be used to determine the server or client role for the device. In a
-bridge, clientOnly (which is a global option) can be set to make all ports
-assume the client role. masterOnly (which is a per-port config option) can then
+bridge, clientOnly can be set globally to make all ports assume the client role,
+or per port. masterOnly (which is a per-port config option) can then
 be used to set individual ports to take on the server role.
 The default value is 'ptp' which runs the BMCA related state machines.
 
@@ -694,7 +694,12 @@ The default is 0 (disabled).
 
 .TP
 .B clientOnly
-The local clock is a client-only clock if enabled. The default is 0 (disabled).
+The local clock is a client-only clock if enabled in the global section.
+Enabled in a port section, it keeps only that port out of the server state:
+where the BMCA would make the port a server, it stays in the listening state
+and sends neither Announce nor Sync messages, while the clock may still be
+the grandmaster through its other ports. A port cannot disable a clock-wide
+clientOnly. The default is 0 (disabled).
 
 .TP
 .B clockAccuracy

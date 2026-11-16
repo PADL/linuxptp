@@ -3182,7 +3182,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		}
 
 		delay_req_prune(p);
-		if (clock_slave_only(p->clock) && p->delayMechanism != DM_P2P &&
+		if (p->client_only && p->delayMechanism != DM_P2P &&
 		    port_renew_transport(p)) {
 			return EV_FAULT_DETECTED;
 		}
@@ -3743,6 +3743,8 @@ struct port *port_open(const char *phc_device,
 		p->phc_index = phc_index;
 	p->jbod = config_get_int(cfg, interface_name(interface), "boundary_clock_jbod");
 	p->master_only = config_get_int(cfg, interface_name(interface), "serverOnly");
+	p->client_only = clock_slave_only(clock) ||
+		config_get_int(cfg, interface_name(interface), "clientOnly");
 	p->bmca = config_get_int(cfg, interface_name(interface), "BMCA");
 	p->trp = transport_create(cfg, config_get_int(cfg,
 			      interface_name(interface), "network_transport"));
@@ -3753,14 +3755,14 @@ struct port *port_open(const char *phc_device,
 	if (p->bmca == BMCA_NOOP && !port_is_uds(p)) {
 		if (p->master_only) {
 			p->state_machine = designated_master_fsm;
-		} else if (clock_slave_only(clock)) {
+		} else if (p->client_only) {
 			p->state_machine = designated_slave_fsm;
 		} else {
 			pr_err("Please enable at least one of serverOnly or clientOnly when BMCA == noop.\n");
 			goto err_transport;
 		}
 	} else {
-		p->state_machine = clock_slave_only(clock) ? ptp_slave_fsm : ptp_fsm;
+		p->state_machine = p->client_only ? ptp_slave_fsm : ptp_fsm;
 	}
 
 	if (port_is_uds(p)) {

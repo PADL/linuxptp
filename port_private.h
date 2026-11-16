@@ -130,6 +130,7 @@ struct port {
 	int                 follow_up_info;
 	int                 freq_est_interval;
 	int                 hybrid_e2e;
+	int                 client_only;
 	int                 master_only;
 	int                 match_transport_specific;
 	int                 msg_interval_request;
