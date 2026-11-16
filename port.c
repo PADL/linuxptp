@@ -2998,7 +2998,7 @@ void port_dispatch(struct port *p, enum fsm_event event, int mdiff)
 
 static void bc_dispatch(struct port *p, enum fsm_event event, int mdiff)
 {
-	if (clock_slave_only(p->clock)) {
+	if (p->client_only && p->best) {
 		if (event == EV_RS_GRAND_MASTER) {
 			port_slave_priority_warning(p);
 		}
